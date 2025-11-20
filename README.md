@@ -56,8 +56,8 @@ The `Throughput Delta` is calculated as the change in estimated throughput for a
 
 To prevent unnecessary distribution, a penalty (discount) is applied when a job is duplicated:
 
-* **Same Server Discount ($\text{dist\_discount\_same}$):** A smaller penalty applied if the duplicate is placed on the *same server* as an existing part of the job.
-* **Cross Server Discount ($\text{dist\_discount\_cross}$):** A larger penalty applied if the duplicate is placed on a *different server*, discouraging expensive cross-server communication unless the throughput gain is substantial.
+* **Same Server Discount:** A smaller penalty applied if the duplicate is placed on the *same server* as an existing part of the job.
+* **Cross Server Discount:** A larger penalty applied if the duplicate is placed on a *different server*, discouraging expensive cross-server communication unless the throughput gain is substantial.
 
 This discount is subtracted from the `Throughput Delta` to ensure that distribution is only performed when the performance gain outweighs the infrastructural cost.
 
