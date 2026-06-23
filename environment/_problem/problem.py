@@ -147,7 +147,7 @@ class ProblemDescription:
         self.job_types = self.get_job_types()
         
         if jobs is None:
-            jobs_num = random.randint(20, 80)
+            jobs_num = random.randint(20, 90)
             self.jobs = random.choices(self.job_types, k=jobs_num)
         else:
             self.jobs = jobs if jobs is not None else []
@@ -156,6 +156,7 @@ class ProblemDescription:
         
         self.CList = []
         self.Tr = []  # Throughput matrix: J x C x A
+        self._comb_to_idx = {}
         
         if self.jobs:
             self.prepare_problem()
@@ -164,6 +165,9 @@ class ProblemDescription:
         job_types = [(job_template.model, 1) for job_template in JobTable]
         return job_types
     
+    def _build_comb_index(self):
+        self._comb_to_idx = {tuple(sorted(c)): idx for idx, c in enumerate(self.CList)}
+
     def add_job(self, job):
         """Add a job to the problem and update the throughput matrix"""
         self.jobs.append(job)
@@ -182,6 +186,8 @@ class ProblemDescription:
         # Add new pair combinations with existing jobs
         for i in range(self.J-1):
             self.CList.append((i, self.J-1))
+        
+        self._build_comb_index()
         
         # Update throughput matrix for all jobs
         self.update_throughput_matrix()
@@ -259,6 +265,7 @@ class ProblemDescription:
     
     def prepare_problem(self):
         self.generate_combinations()
+        self._build_comb_index()
         self.generate_throughput_matrix()
     
     def generate_combinations(self):

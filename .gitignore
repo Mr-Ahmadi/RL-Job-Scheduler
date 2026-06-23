@@ -1,0 +1,40 @@
+# --- Python ---
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+*.egg
+.venv/
+venv/
+env/
+
+# --- macOS ---
+.DS_Store
+Icon
+._*
+.Spotlight-V100
+.Trashes
+
+# --- IDEs ---
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# --- Data ---
+physical_all.json
+
+# --- Logs ---
+*.log
+
+# --- Models / checkpoints ---
+models/
+
+# --- Plots / figures ---
+curves/
+
+# --- Environment ---
+environment/__pycache__/
+environment/**/__pycache__/
