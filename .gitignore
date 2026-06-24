@@ -32,9 +32,6 @@ physical_all.json
 # --- Models / checkpoints ---
 models/
 
-# --- Plots / figures ---
-curves/
-
 # --- Environment ---
 environment/__pycache__/
 environment/**/__pycache__/
