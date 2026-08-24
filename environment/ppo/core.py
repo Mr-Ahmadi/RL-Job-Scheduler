@@ -1,3 +1,4 @@
+import os
 import random
 import numpy as np
 import torch
@@ -94,6 +95,7 @@ class ActorNet(nn.Module):
         return dist, probs
 
     def save(self):
+        os.makedirs(os.path.dirname(self.checkpoint_file), exist_ok=True)
         torch.save(self.state_dict(), self.checkpoint_file)
 
     def load(self):
@@ -129,6 +131,7 @@ class CriticNet(nn.Module):
         return value
 
     def save(self):
+        os.makedirs(os.path.dirname(self.checkpoint_file), exist_ok=True)
         torch.save(self.state_dict(), self.checkpoint_file)
 
     def load(self):
@@ -262,9 +265,17 @@ class PPOAgent:
     def store(self, *args):
         self.memory.store(*args)
 
-    def choose_action(self, state):
+    def choose_action(self, state, action_mask=None):
         state_t = torch.tensor(state, dtype=torch.float32, device=device).unsqueeze(0)
-        dist, _ = self.actor(state_t)
+        dist, probs = self.actor(state_t)
+        if action_mask is not None:
+            mask = torch.tensor(action_mask, dtype=torch.float32, device=device).unsqueeze(0)
+            masked = probs * mask
+            if masked.sum(dim=-1).item() == 0:
+                masked = mask / mask.sum(dim=-1, keepdim=True)
+            else:
+                masked = masked / masked.sum(dim=-1, keepdim=True)
+            dist = Categorical(masked)
         action = dist.sample()
         logp = dist.log_prob(action).item()
         val = self.critic(state_t).squeeze().item()

@@ -66,6 +66,7 @@ class Base_SubsetSelectorEnv(gym.Env):
         original_job_idx = dup_info.get('original_job_idx') if dup_info is not None else None
         for_time = dup_info.get('for_dup', False) if dup_info is not None else False
 
+        was_training = agent.actor.training
         if not training:
             agent.actor.eval()
             agent.critic.eval()
@@ -102,7 +103,8 @@ class Base_SubsetSelectorEnv(gym.Env):
             done = bool(term or trunc)
 
             if training:
-                agent.store(state, a_idx, logp, val, r, float(done))
+                store_done = float(for_time or done)
+                agent.store(state, a_idx, logp, val, r, store_done)
 
             total_reward += r
             state = flatten_obs(next_obs) if not done else state
@@ -111,7 +113,7 @@ class Base_SubsetSelectorEnv(gym.Env):
             if for_time:
                 break
 
-        if not training:
+        if was_training and not training:
             agent.actor.train()
             agent.critic.train()
 
@@ -176,7 +178,8 @@ class Base_SubsetSelectorEnv(gym.Env):
         else:
             self.env.current_job_idx += 1
             done = self.env.current_job_idx >= self.primary_J
-            return self._augment_obs(self.env._get_obs(self.primary_J)), 0.0, done, False, {
+            skip_reward = 0.0
+            return self._augment_obs(self.env._get_obs(self.primary_J)), skip_reward, done, False, {
                 "total_reward": self.reward1 + self.reward2
             }
 

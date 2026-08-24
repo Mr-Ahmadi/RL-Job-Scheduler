@@ -1,6 +1,5 @@
 import os
 import json
-import random
 import numpy as np
 from .base import Base_JobSchedulingEnv
 
@@ -16,7 +15,6 @@ class Eval_JobSchedulingEnv(Base_JobSchedulingEnv):
 
     def _load_next_job_set(self):
         if self.set_idx >= len(self.set_files):
-            random.shuffle(self.set_files)
             self.set_idx = 0
 
         set_file = self.set_files[self.set_idx]

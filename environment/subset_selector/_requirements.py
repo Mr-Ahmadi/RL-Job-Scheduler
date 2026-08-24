@@ -45,7 +45,8 @@ def get_valid_action_indices(env, for_dup=False, original_job_idx=None):
 class PPOAgent(BasePPOAgent):
     def __init__(self, state_dim, action_dim, lr_actor, lr_critic, gamma, lamda,
                  clip, epochs, batch_size, checkpoint,
-                 ent_start=0.1, ent_end=0.01, ent_decay=0.99):
+                 ent_start=0.1, ent_end=0.01, ent_decay=0.99,
+                 **kwargs):
         super().__init__(
             state_dim=state_dim,
             action_dim=action_dim,
@@ -59,7 +60,8 @@ class PPOAgent(BasePPOAgent):
             checkpoint_dir=checkpoint,
             ent_start=ent_start,
             ent_end=ent_end,
-            ent_decay=ent_decay
+            ent_decay=ent_decay,
+            **kwargs
         )
 
     def choose_action(self, state, env, for_dup=False, original_job_idx=None, greedy=False):
@@ -90,3 +92,6 @@ class PPOAgent(BasePPOAgent):
             action = masked_dist.sample()
             logp = masked_dist.log_prob(action).item()
         return int(action.item()), float(logp), val
+
+
+
