@@ -4,3 +4,4 @@ models/
 *.pyc
 .DS_Store
 *.pdf
+*.pth
