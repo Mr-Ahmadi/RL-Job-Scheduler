@@ -1,7 +1,72 @@
+# ---------------------------------------------------------------------------
+# Python
+# ---------------------------------------------------------------------------
 __pycache__/
-__paper/
-models/
-*.pyc
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+.venv/
+venv/
+env/
+.ipynb_checkpoints/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# ---------------------------------------------------------------------------
+# OS and editors
+# ---------------------------------------------------------------------------
 .DS_Store
-*.pdf
-*.pth
+._*
+Thumbs.db
+*.swp
+*~
+.idea/
+# .vscode/settings.json is tracked on purpose (shared interpreter settings);
+# everything else the editor writes is local.
+.vscode/*
+!.vscode/settings.json
+
+# ---------------------------------------------------------------------------
+# Trained models (checkpoints are large; keep them local, do not commit)
+# ---------------------------------------------------------------------------
+models/
+
+# ---------------------------------------------------------------------------
+# Paper
+#
+# Sources, figures and the built PDF are tracked; LaTeX's scratch files and the
+# superseded drafts in archive/ are not.
+# ---------------------------------------------------------------------------
+paper/
+*.aux
+*.bbl
+*.blg
+*.brf
+*.fdb_latexmk
+*.fls
+*.idx
+*.ilg
+*.ind
+*.lof
+*.log
+*.lot
+*.nav
+*.out
+*.snm
+*.synctex.gz
+*.toc
+*.xdv
+
+# Reference PDFs dropped at the repository root (e.g. papers being read) are
+# not part of this project; the paper's own PDFs live under paper/.
+/*.pdf
+
+# ---------------------------------------------------------------------------
+# Scratch
+# ---------------------------------------------------------------------------
+*.tmp
+scratch/
+nohup.out

@@ -1,0 +1,156 @@
+{
+  "config": {
+    "init": "cold",
+    "episodes": 400,
+    "k": 5,
+    "explore_eps": 0.1,
+    "update_every": 1,
+    "grad_steps": 16,
+    "batch_size": 128,
+    "lr": 0.001,
+    "capacity": 50000,
+    "eval_every": 25,
+    "learned_dir": "models/job_scheduling/learned_topk",
+    "out_dir": "models/job_scheduling/online_reward_model",
+    "seed": 42,
+    "tag": null
+  },
+  "history": [
+    {
+      "episode": 0,
+      "labels": 0,
+      "heldout_mean": 12.815759650419892,
+      "heldout_std": 3.1486587287961876,
+      "argmax_agreement": 0.04666666666666667,
+      "mae": 0.43473994731903076
+    },
+    {
+      "episode": 25,
+      "labels": 1461,
+      "heldout_mean": 17.15537787365169,
+      "heldout_std": 3.749855388028223,
+      "argmax_agreement": 0.5066666666666667,
+      "mae": 0.0684356540441513
+    },
+    {
+      "episode": 50,
+      "labels": 2822,
+      "heldout_mean": 16.88814347256424,
+      "heldout_std": 3.230871251176263,
+      "argmax_agreement": 0.6666666666666666,
+      "mae": 0.059317994862794876
+    },
+    {
+      "episode": 75,
+      "labels": 4242,
+      "heldout_mean": 16.8175562186323,
+      "heldout_std": 3.548824575968092,
+      "argmax_agreement": 0.6133333333333333,
+      "mae": 0.04527338594198227
+    },
+    {
+      "episode": 100,
+      "labels": 5721,
+      "heldout_mean": 17.22128650120063,
+      "heldout_std": 3.7443999529362975,
+      "argmax_agreement": 0.62,
+      "mae": 0.0390007309615612
+    },
+    {
+      "episode": 125,
+      "labels": 7295,
+      "heldout_mean": 17.38130611444236,
+      "heldout_std": 3.644406015627668,
+      "argmax_agreement": 0.7333333333333333,
+      "mae": 0.038500841706991196
+    },
+    {
+      "episode": 150,
+      "labels": 8610,
+      "heldout_mean": 17.188449250649796,
+      "heldout_std": 3.6395180512763283,
+      "argmax_agreement": 0.64,
+      "mae": 0.02511405572295189
+    },
+    {
+      "episode": 175,
+      "labels": 9881,
+      "heldout_mean": 17.07024096671246,
+      "heldout_std": 3.622991954723014,
+      "argmax_agreement": 0.6466666666666666,
+      "mae": 0.026065843179821968
+    },
+    {
+      "episode": 200,
+      "labels": 11120,
+      "heldout_mean": 17.2250981543562,
+      "heldout_std": 3.494740993695132,
+      "argmax_agreement": 0.6333333333333333,
+      "mae": 0.024998998269438744
+    },
+    {
+      "episode": 225,
+      "labels": 12479,
+      "heldout_mean": 17.17933305435883,
+      "heldout_std": 3.546853128763073,
+      "argmax_agreement": 0.66,
+      "mae": 0.028044847771525383
+    },
+    {
+      "episode": 250,
+      "labels": 13972,
+      "heldout_mean": 16.968557599646154,
+      "heldout_std": 3.567347898006767,
+      "argmax_agreement": 0.6,
+      "mae": 0.020290127024054527
+    },
+    {
+      "episode": 275,
+      "labels": 15277,
+      "heldout_mean": 17.389187851219027,
+      "heldout_std": 3.6575549192565715,
+      "argmax_agreement": 0.78,
+      "mae": 0.01895919442176819
+    },
+    {
+      "episode": 300,
+      "labels": 16588,
+      "heldout_mean": 17.038955994123576,
+      "heldout_std": 3.374436520670721,
+      "argmax_agreement": 0.72,
+      "mae": 0.020016057416796684
+    },
+    {
+      "episode": 325,
+      "labels": 17874,
+      "heldout_mean": 17.087852711461494,
+      "heldout_std": 3.6945340518433456,
+      "argmax_agreement": 0.8066666666666666,
+      "mae": 0.01543240062892437
+    },
+    {
+      "episode": 350,
+      "labels": 19294,
+      "heldout_mean": 17.023564166253458,
+      "heldout_std": 3.6676381788775214,
+      "argmax_agreement": 0.7066666666666667,
+      "mae": 0.017645930871367455
+    },
+    {
+      "episode": 375,
+      "labels": 20580,
+      "heldout_mean": 17.195995515052115,
+      "heldout_std": 3.6115760590161883,
+      "argmax_agreement": 0.72,
+      "mae": 0.016681719571352005
+    },
+    {
+      "episode": 400,
+      "labels": 21867,
+      "heldout_mean": 17.219430092534346,
+      "heldout_std": 3.9394122424428657,
+      "argmax_agreement": 0.7466666666666667,
+      "mae": 0.013130619190633297
+    }
+  ]
+}

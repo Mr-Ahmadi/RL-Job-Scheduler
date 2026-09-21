@@ -5,46 +5,102 @@ This repository contains the code for an ML job scheduling system that uses a no
 ## Setup and Requirements
 
 - **Python 3.10+** with `pip install -r requirements.txt` (`gymnasium`, `numpy`, `torch`, `matplotlib`, `scipy`).
-  SciPy is needed only by `sia_baseline.py`, which solves Sia's allocation ILP with `scipy.optimize.milp`.
-- **`physical_all.json` (474 KB, Gavel throughput table) must be present at the repository root.**
-  It is loaded at runtime by `environment/_problem/problem.py` and is *gitignored* (large derived
-  data file), so it is not committed — keep it or restore it from the Gavel dataset before running
-  anything. Without it the environments cannot construct the throughput model.
-- **`saved_job_sets/`** (committed) — the 20 fixed held-out job sets used for every evaluation.
-- Device is auto-selected in `environment/ppo/core.py`: `cuda` → `mps` → `cpu`.
+  SciPy is needed only by `scripts/sia_baseline.py`, which solves Sia's allocation ILP with `scipy.optimize.milp`.
+- **`data/physical_all.json` (474 KB, Gavel throughput table)** is committed at the repository root
+  and loaded at runtime by `nero/envs/problem.py`. Without it the environments cannot
+  construct the throughput model.
+- **`data/saved_job_sets/`** (committed) — the 20 fixed held-out job sets used for every evaluation.
+- Device is auto-selected in `nero/agents/ppo.py`: `cuda` → `mps` → `cpu`.
 
 See **Quick Start** below for the commands to rerun the project, and
 **Reproducing Everything from Scratch** for a detailed step-by-step walkthrough.
 
-## Quick Start (how to rerun the project)
+## How to Run
 
-From a clean clone with `physical_all.json` and `saved_job_sets/` in place, the whole
-pipeline is **six commands**:
+### The protocol every model follows
+
+One convention, applied everywhere in this repository:
+
+| | |
+|---|---|
+| **Training** | **randomly generated job sets** (`Train_JobSchedulingEnv`, 20–90 jobs drawn from the 24 job types). No script trains on `data/saved_job_sets/` — for the reward model this is enforced by an assertion in the collection loop, not left to convention. |
+| **Model selection** | a separate **validation** stream of randomly generated job sets (`python -m scripts.evaluate --validation 40`), drawn with a seed used for no training and no reporting. Choices between configurations — the search's `K`, scoring mode and canonicalisation mode — are made here. |
+| **Testing** | the **20 held-out sets** in `data/saved_job_sets/`, walked in deterministic order (`set_000` … `set_019`), one episode each. Used only to report. |
+| **Test-time policy** | **greedy masked arg max** — the action mask comes from `Base_JobSchedulingEnv.feasible_slots`, the single definition of feasibility in the project, and the highest-probability feasible action is played. Sampling, dropout and exploration are all off. |
+| **Metric** | mean episode throughput reward over the 20 test sets. |
+
+The top-K policies follow the same rule with one extra step: the greedy arg max
+becomes "rank by the policy, then pick among the top $K$ by score". Everything else —
+masking, determinism, the 20 sets — is unchanged.
+
+**The reward model never sees the test sets.** Its labels come only from randomly
+generated job sets; `data/saved_job_sets/` appears in `scripts/train_reward_model.py` solely to read
+the observation dimensions and to print a final score. The shipped configuration
+(`K=5`, myopic scoring, deduplicating canonicalisation) is the one validation selects —
+16.23 there, against 15.79 for `K=3`, 15.22 for the one-step lookahead, 15.00 for the
+expanding candidate set and 13.07 for the Q-head alone.
+
+### Commands
+
+From a clean clone with `data/physical_all.json` and `data/saved_job_sets/` in place:
 
 ```bash
 # 0. environment
 pip install -r requirements.txt
 
-# 1. train the inner (placement) agent          -> models/job_scheduling/ppo/ (expect ~15.15)
-python job_scheduling_ppo.py
+# --- training (all on randomly generated job sets) -------------------------
+# 1. inner placement agent           -> models/job_scheduling/ppo/            (~15.15)
+python -m scripts.train_inner
 
-# 2. train the outer (joint/duplication) agent  -> models/subset_selector/ppo/ (expect ~17.91)
-python subset_selector_ppo.py
+# 2. outer duplication agent         -> models/subset_selector/ppo/           (~17.91)
+python -m scripts.train_outer        #    also fine-tunes ppo/secondary/
 
-# 3. re-run every baseline + two-tier evaluation -> curves/job_scheduling/evaluation_scores_*.json
-python eval_all_policies.py
-python sia_baseline.py
+# 3. oracle-free scoring heads       -> models/job_scheduling/learned_topk/   (~17.48)
+python -m scripts.train_reward_model         #    reward model + value head + Q-head
 
-# 4. regenerate all figures                     -> __paper/images/ + curves/figures/figures.json
-python regen_paper_figs.py
+# 4. continual online learning       -> models/job_scheduling/online/         (optional)
+python -m scripts.online_learning
+python -m scripts.online_learning --use-topk --out-dir models/job_scheduling/online_topk --tag topk
 
-# 5. benchmark online inference latency
-python benchmark_inference.py
+# --- evaluation (all on the 20 held-out sets, greedy) ----------------------
+# 5. every policy + baseline         -> results/job_scheduling/evaluation_scores_*.json
+python -m scripts.evaluate
+python -m scripts.sia_baseline
+
+# 6. figures
+python -m scripts.figure_data           # measurements the report figures need
+python -m scripts.figures          # -> paper/images/report_*.pdf
+
+# 7. latency + correctness guards
+python -m scripts.benchmark
 ```
 
-Steps 1–2 regenerate the **models**; steps 3–5 regenerate the **evaluation scores, figures,
-and latency numbers**. Commands must run from the repository root and steps must run in
-order (step 2 reads step 1's weights, steps 3–5 read step 2's artifacts).
+Run from the repository root, in order: step 2 reads step 1's weights, step 3 reads step 1's,
+step 4 reads step 3's, and steps 5–7 read everything above. Steps 3–4 are only needed for the
+oracle-free top-K and online-learning results; the two-tier pipeline does not depend on them.
+
+### Self-checks
+
+Three claims in this project are verified rather than asserted, each runnable on its own:
+
+```bash
+python -m nero.search.canonicalization    # slot equivalence classes are exact vs the true reward
+python -m nero.search.fast_obs            # the delta-built next observation matches env.step
+python -m scripts.benchmark        # the learned search never reads the throughput table,
+                                     # and canonicalised top-K == plain top-K
+```
+
+### Model selection
+
+`data/saved_job_sets/` is the test set and nothing is tuned on it. To choose between
+configurations, score them on randomly generated validation sets instead:
+
+```bash
+python -m scripts.evaluate --validation 40
+```
+
+This writes `results/job_scheduling/validation_scores.json`. Its numbers are a
+selection tool, not results — the reported figures always come from the 20 test sets.
 
 ## Project Architecture
 
@@ -55,7 +111,7 @@ The scheduling problem is modeled as a two-stage sequential decision process, ea
 
 This structure allows the system to first satisfy basic resource constraints and then fine-tune the assignment for performance by considering distribution, resulting in a flexible and high-performing scheduler.
 
-![image](./diagram.png)
+![The NERO workflow](paper/images/workflow.png)
 
 ---
 
@@ -97,7 +153,7 @@ This project uses the **Gavel** dataset (Stanford FutureData Lab), which provide
 Gavel repository:
 **[https://github.com/stanford-futuredata/gavel](https://github.com/stanford-futuredata/gavel)**
 
-We rely on Gavel’s job performance tables for accurate throughput estimation when assigning jobs and evaluating the impact of distribution across resources. The tables are materialized in `physical_all.json` at the repository root (24 job types × 3 accelerator types; see Setup above).
+We rely on Gavel’s job performance tables for accurate throughput estimation when assigning jobs and evaluating the impact of distribution across resources. The tables are materialized in `data/physical_all.json` at the repository root (24 job types × 3 accelerator types; see Setup above).
 
 ---
 
@@ -141,10 +197,10 @@ The system employs a fine-tuning approach for the hierarchical agents:
 
 The performance of the trained agents is assessed on a fixed, independent set of job requests:
 
-* **Job Sets:** Evaluation is conducted over **20 specified job sets** (`eval_episodes=20`, files `saved_job_sets/set_000.json` … `set_019.json`).
+* **Job Sets:** Evaluation is conducted over **20 specified job sets** (`eval_episodes=20`, files `data/saved_job_sets/set_000.json` … `set_019.json`).
 * **Metric:** The primary evaluation metric is the average cumulative reward (total throughput) achieved across all test episodes.
-* **Scripts:** `eval_all_policies.py` re-runs random, the two Gavel greedy baselines, greedy PPO, top-K (K=3/5), and the trained two-tier (subset-selector) system; `sia_baseline.py` re-runs the four Sia configurations. Both overwrite `curves/job_scheduling/evaluation_scores_*.json` and print a `vs-committed diff` per policy to catch any drift from the reported numbers.
-* **Online use:** Decisions require only the observable state (GPU occupancy, job model/batch size, queue statistics); no throughput table is queried at decision time. Inference runs in eager fp32 on CPU (see `deploy/online_actor.py`, benchmarked by `benchmark_inference.py`): inner forward pass ≈ 0.11 ms, full placement decision ≈ 0.54 ms, outer duplication decision ≈ 0.10 ms (M3 CPU medians). The inner forward pass is faster than the oracle's raw table lookups (~0.27 ms/decision) while requiring no throughput information — the `gavel_max_total` oracle needs exact true throughputs (including co-location interference) at runtime and therefore serves only as an offline upper bound.
+* **Scripts:** `scripts/evaluate.py` re-runs random, the two Gavel greedy baselines, greedy PPO, oracle top-K (K=3/5), the oracle-free learned top-K (K=3/5 plus its ablations), the continually-updated online policy, and the trained two-tier (subset-selector) system; `scripts/sia_baseline.py` re-runs the four Sia configurations. Both overwrite `results/job_scheduling/evaluation_scores_*.json` and print a `vs-committed diff` per policy to catch any drift from the reported numbers.
+* **Online use:** Decisions require only the observable state (GPU occupancy, job model/batch size, queue statistics); no throughput table is queried at decision time. Inference runs in eager fp32 on CPU (see `nero/deployment.py`, benchmarked by `scripts/benchmark.py`): inner forward pass ≈ 0.11 ms, full placement decision ≈ 0.54 ms, outer duplication decision ≈ 0.10 ms (M3 CPU medians; absolute values move with machine and load — see **Decision latency** for a same-run comparison). The oracle-free top-K search adds ≈ 0.08 ms on top of a greedy placement decision and is the higher-scoring deployment path. The inner forward pass is faster than the oracle's raw table lookups (~0.27 ms/decision) while requiring no throughput information — the `gavel_max_total` oracle needs exact true throughputs (including co-location interference) at runtime and therefore serves only as an offline upper bound.
 
 ---
 
@@ -188,12 +244,392 @@ The performance of the trained agents is assessed on a fixed, independent set of
 
 ---
 
-## PPO Top-K Hybrid Search
+## Top-K Search: Oracle-Assisted and Oracle-Free
 
-The scheduler uses a **PPO-guided beam search** at test time: the PPO network proposes the top-K actions by probability, and the optimal among them is selected using the true reward function (`new_tp + delta`). This combines PPO's learned priors with exact optimization:
+At test time the scheduler runs a **PPO-guided beam search**: the policy proposes the top-K slots
+by probability and the best of them is played. This pairs PPO's long-horizon prior (which slots
+are worth considering) with an explicit evaluation (which of them pays most right now), and
+**K=3 evaluates only 7% of the action space** (3/45 vs gavel's 45/45).
 
-- **K=3** evaluates only **7%** of the action space (3/45 vs gavel's 45/45)
-- Consistently **outperforms** the greedy gavel_max_total oracle
+Everything hinges on what does the evaluating.
+
+### Oracle-assisted (`ppo_topk_k3/k5`) — an offline upper bound
+
+The committed top-K policies score candidates with the environment's true reward
+`new_tp + delta`, read straight out of the Gavel throughput tables. A live cluster does not know
+the co-location interference of a placement it has not made yet, so this is an **upper bound**,
+not a deployable scheduler — the same caveat as `gavel_max_total`.
+
+### Oracle-free (`ppo_topk_learned_k3/k5`) — the deployable version
+
+`nero/search/topk.py` runs the identical search with every oracle lookup replaced by something
+computable from observable state:
+
+| Step | Oracle-assisted | Oracle-free |
+|---|---|---|
+| Propose | policy top-K over feasible slots | same |
+| Deduplicate | — | **canonicalisation** (`nero/search/canonicalization.py`) |
+| Score | `new_tp + delta` from the throughput table | **learned reward model**, optionally + value/Q head |
+| Commit | `argmax` | tolerance `argmax`; exact ties resolved by policy rank |
+
+**1. Canonicalisation.** The reward of placing job `j` at slot `(s, a)` depends on only three
+observable things: the accelerator type, the co-located job together with the distribution
+discount that applies to it on that server, and `j`'s own discount. Two slots sharing that key are
+*exactly* reward-equivalent. `python -m nero.search.canonicalization` verifies this against the true
+reward: over 5 random-action episodes, **9,476 slots collapse into 3,737 classes
+(2.54 slots/class) with a maximum intra-class reward spread of 0.0**. Inside a top-5 candidate
+list this cuts the work to **2.23 candidates actually scored, with provably identical
+decisions** — the survivor of each class is the member the policy ranked highest, and the
+members it replaces score identically (see **Decision latency**).
+
+**2. Learned reward model.** Because the canonical key is a *sufficient statistic* for the reward,
+the reward model is a small MLP over an 18-dimensional feature vector shared across all slots,
+not a 632→45 network. The throughput table supplies labels **offline** (the way logged cluster
+measurements would), densely: every visited state contributes a label for all ~45 feasible slots.
+It reaches **98.3% agreement with the oracle's argmax** and a **mean regret of 4.5e-05** reward
+units per decision — accurate enough to stand in for the table.
+
+**3. Long-horizon heads.** A Monte-Carlo value head `V(state)` and a double-DQN `Q(state, ·)` are
+also trained (`scripts/train_reward_model.py`), letting the search score `r_hat + γ·V(s')` or `Q` instead
+of the myopic reward. The next state `s'` needed for the lookahead is built by
+`nero/search/fast_obs.py`, which applies a placement to an observation as a delta — exact to float32
+(`python -m nero.search.fast_obs` checks it against `env.step`) and **24× cheaper** than rebuilding
+the observation (0.014 ms vs 0.333 ms), which is what makes a K-candidate lookahead affordable
+at all.
+
+**Result.** All numbers below are on the 20 test sets, which nothing is trained or
+tuned on. The configuration was selected on validation (see **The protocol every model
+follows**).
+
+| Policy | Test (20 sets) | Δ vs learned K=5 | paired t | Oracle-free? |
+|---|---|---|---|---|
+| **Two-tier + search (both phases)** | **19.76 ± 3.08** | +2.27 | +1.90 | ✅ |
+| Two-tier + search (primary only) | 19.24 ± 2.93 | +1.75 | +1.61 | ✅ |
+| Two-tier | 17.91 ± 2.92 | +0.42 | +0.38 | ✅ |
+| **Learned top-K (K=5)** | **17.48 ± 4.00** | — | — | ✅ |
+| Oracle top-K (K=5) | 17.21 ± 3.84 | −0.28 | −2.06 | ❌ |
+| Learned top-K (K=3) | 16.65 ± 3.19 | −0.83 | — | ✅ |
+| Oracle top-K (K=3) | 16.61 ± 3.18 | −0.87 | — | ❌ |
+| `gavel_max_total` (oracle) | 16.10 ± 3.20 | −1.38 | **−4.70** | ❌ |
+| PPO inner agent (greedy) | 15.15 ± 3.48 | −2.33 | **−3.91** | ✅ |
+
+The oracle-free search **reproduces** the oracle-assisted refinement it replaces
+(17.48 vs 17.21 at K=5; 16.65 vs 16.61 at K=3) while reading no throughput data at
+decision time, and beats the `gavel_max_total` oracle by +1.38 (t = 4.70) and the bare
+policy by +2.33 (t = 3.91). Reproducing the oracle-assisted result *without* an oracle
+is the claim; the +0.28 it edges ahead by at K=5 is within the noise of a 20-set
+comparison and should not be read as an improvement.
+
+### A note on model selection
+
+Two systems here have their checkpoints chosen by a score on the test sets:
+`scripts/train_inner.py` keeps the inner agent's best held-out evaluation, and
+`scripts/train_outer.py` keeps the best of ~500 evaluations. That inflates those two
+numbers by an amount the test sets cannot reveal. Scoring on 40 validation sets
+suggests the effect is real and unequal — the two-tier system leads the search by
++0.42 on the test sets but trails it by −0.56 on validation, while the search's margin
+over `gavel_max_total` holds (+1.04, t = 5.60). Every configuration introduced in this
+work is therefore selected on validation; the two-tier numbers are reported as they
+stand, with the caveat that **two-tier vs. search is the one comparison not to treat as
+settled**.
+
+### Combining the two: the best configuration found
+
+The search and the two-tier system are orthogonal — the search improves *where each copy
+goes*, the outer agent decides *how many copies there are*. `nero/search/two_tier.py`
+leaves the outer agent exactly as trained and replaces only the **placement** step.
+
+NERO places jobs with two different networks: the frozen **primary** policy for the initial
+placement, and the fine-tuned **secondary** policy for duplicates. The search can replace
+either or both:
+
+| | initial placement | duplicate placement | Test (20 sets) |
+|---|---|---|---|
+| Two-tier | primary, argmax | secondary, argmax | 17.91 ± 2.92 |
+| Two-tier + search (primary) | **search** | secondary, argmax | 19.24 ± 2.93 |
+| **Two-tier + search (both)** | **search** | **search** | **19.76 ± 3.08** |
+
+`subset_selector_topk_both` is **+1.85** over the two-tier baseline (t = 2.73, 13/20 sets)
+and **+2.27** over the search alone. It also uses **fewer duplicates** (6.1 vs 7.5 per
+episode): better placement makes duplication less necessary.
+
+**Which policy proposes the candidates does not matter.** In the arm above, both phases
+search over the *primary* policy, so the fine-tuned secondary network is bypassed rather
+than re-ranked. Searching the duplicates over the secondary policy instead
+(`secondary_agent=`) gives 19.78 ± 2.89 — a difference of +0.03 (t = 0.13). Once the search
+selects among candidates, the secondary fine-tuning buys nothing it does not already supply.
+
+**The primary phase is exact; the duplicate phase is an approximation.** No duplicates exist
+during the initial phase, so the canonical features fully determine every candidate's reward.
+Placing a *duplicate* pays `− discount(s)·(tr_orig + tr_dup)`, and `tr_orig` — the throughput
+of the copy already running — is not in the feature vector. It still helps (+0.52 over
+primary-only), but it is the one place where the score is knowingly incomplete. In a real
+deployment `tr_orig` is measurable on the running copy and should be fed in.
+
+### Learning the reward model online, with no prior profiling
+
+The offline fit above is the most generous assumption in this project: it labels *every*
+feasible slot of every visited state, and it sees all 24 job types. `scripts/online_reward_model.py`
+removes it. The PPO policy is trained offline as usual — it never needs the tables at decision
+time — and the reward model then starts from either random weights (`--init cold`) or a fit that
+never saw two of the five model families (`--init partial`), and learns on live traffic under
+deployment rules: **one label per decision**, the realised reward of the slot actually played,
+and no table access while deciding.
+
+```bash
+python -m scripts.train_reward_model --exclude-models "ResNet-50,Transformer"     --out-dir models/job_scheduling/learned_topk_partial      # the partial fit
+python -m scripts.online_reward_model --init cold
+python -m scripts.online_reward_model --init partial --learned-dir models/job_scheduling/learned_topk_partial
+```
+
+Deployment stream: randomly generated job sets. Test: the 20 held-out sets, greedy, never
+learned from.
+
+| Labels observed | Cold start | Reference |
+|---|---|---|
+| 0 (random weights) | 12.82 | — below the bare policy |
+| **1,461** (25 episodes) | **17.16** | already past `gavel_max_total` (16.10) and oracle top-K K=3 (16.61) |
+| 7,295 | 17.38 | ≈ the offline-trained model (17.48) |
+| 21,867 (400 episodes) | 17.22 | plateau; model MAE 0.435 → 0.013 |
+
+**~1,500 realised labels — about 25 episodes — recover essentially all of the offline-trained
+performance.** The reason the bootstrap is this cheap is the same structural fact that makes the
+model small: it is one shared function of 18 inputs, not 45 independent outputs, so every
+decision teaches it something that transfers to every slot.
+
+**A second, less obvious result.** The partial model — which never saw ResNet-50 or Transformer —
+scores **17.33 before a single online update**, almost the full model's 17.48. That is *not*
+generalisation. Measured directly, its prediction error on the unseen families is **0.3300 MAE
+against 0.0052 for the full model, 63× worse**, and 8.7× worse than its own error on the families
+it did see. What rescues the end-to-end score is the search itself: the candidates are the
+policy's top-5, which are already good placements, so mispricing among them costs little.
+
+The practical reading is that **the policy sets the quality floor and the reward model sets the
+ceiling**. A badly wrong model cannot do much damage — the worst case measured, a random model,
+is 12.82, which is roughly picking uniformly among the policy's top five — and a roughly right
+model captures most of the available gain. That is a good failure mode for something you intend
+to deploy before it is fully trained.
+
+### Is it really oracle-free?
+
+`scripts/benchmark.py` answers this by force: during every `LearnedTopKActor.decide` call the
+environment's throughput table and `_estimate_job_throughput_given_combination` are replaced with
+objects that raise on any access. All four scoring modes complete full episodes with the table
+armed; `ppo_topk_k5` and `gavel_max_total` trip it on their first decision. The learned path reads
+only the assignment matrix, the job identities in the queue, and its own weights.
+
+The throughput table is still used **offline**, to label the reward model's training data — the
+way a real deployment would use logged measurements from its own cluster. The model that results
+is, in effect, a learned compression of that table, and it sees the same 24 job types at
+evaluation time. What it never gets is the thing that makes the oracle undeployable: the measured
+interference of a co-location that has not happened yet. It predicts that from job identities it
+can observe. Training job sets are drawn randomly from the training distribution and never read
+`data/saved_job_sets/`.
+
+### Decision latency
+
+Same-run medians on an idle M3 CPU (`python -m scripts.benchmark`, eager fp32, 1 thread), all
+measured on the same half-full cluster state:
+
+| Decision path | Median | Needs the throughput table? |
+|---|---|---|
+| PPO greedy (same feasibility scan) | 0.50 ms | no |
+| **learned top-K, K=5, `mode=reward`** | **0.58 ms** | **no** |
+| PPO greedy (`nero/deployment.py`) | 0.61 ms | no |
+| oracle top-K, K=5 | 0.66 ms | **yes** |
+| learned top-K, K=5, `mode=blend` | 1.04 ms | no |
+| *canonicalisation of all 45 slots* | *0.043 ms* | no |
+| *delta next-state construction* | *0.013 ms* | no |
+
+The search adds **+0.08 ms (15%)** over a greedy decision built from the same feasibility scan.
+Canonicalisation contributes: on a deployment trajectory it maps 45 feasible slots to 11.3
+classes and cuts a top-5 list to **2.23 candidates actually scored**, with
+`scripts/benchmark.py` asserting the decisions are identical to the undeduplicated search
+over 150 decisions.
+
+**Latency is not the argument for the learned model.** The oracle top-K runs in 0.66 ms — only
+14% slower — because its true-reward evaluation is a few dictionary lookups. An earlier
+measurement here reported 6.83 ms for it, but that was dominated by an `O(J·S·A)` Python
+feasibility scan every policy shared; once that lives in one vectorised place
+(`Base_JobSchedulingEnv.feasible_slots`) the gap disappears. The oracle is unusable online at
+*any* latency, because the co-location it prices has not happened yet. That, not speed, is why
+it needs replacing.
+
+Absolute latencies move with machine and load; the ratios are the reproducible part.
+
+### What the ablations say
+
+| Variant | Mean | Reading |
+|---|---|---|
+| `mode=reward`, `canonical=dedupe` (default) | **17.48** | — |
+| `canonical=none` | 17.48 | identical decisions, 2.2× more candidates scored |
+| `canonical=expand` | 16.08 | see below |
+| `mode=reward_value` (`r_hat + γ·V(s')`) | 16.57 | long-horizon term hurts |
+| `mode=blend` (β = 0.5) | 16.05 | ditto |
+| `mode=q` (Q-head alone) | 13.94 | worse than the greedy policy |
+
+Two findings worth stating plainly, because both cut against the intuition:
+
+* **Canonicalisation is a latency tool, not a quality tool.** Used to *deduplicate* a fixed top-K
+  list it is free (identical decisions, fewer scorings). Used to *expand* the list into K distinct
+  classes (`canonical=expand`) it reaches further down the policy's ranking, and with a myopic
+  score that simply makes the scheduler greedier — 16.08, essentially the `gavel_max_total` oracle
+  (16.10). The policy's probability ordering is itself a long-horizon signal, and widening the
+  candidate set discards it.
+* **The learned long-horizon heads do not pay off at this scale.** The value head's validation MAE
+  is ≈ 0.48 and the Q-head's TD loss plateaus around 0.10, while the reward differences between
+  candidate slots are ~0.01–0.3. The long-horizon term therefore injects noise one to two orders of
+  magnitude larger than the signal it is meant to refine. They are implemented, trained and
+  evaluated (`--mode reward_value|q|blend`), and they are what the online learner keeps updating,
+  but the shipped default is the myopic `reward` mode.
+
+---
+
+## Continual Online Learning
+
+A frozen scheduler is only as good as the traffic it was trained on. `scripts/online_learning.py` and
+`nero/online/learner.py` keep the deployed scheduler learning from the placements it actually
+makes, so it can track a cluster whose job mix drifts.
+
+### What gets updated, and from what signal
+
+| Component | Signal | Rule |
+|---|---|---|
+| reward model | the realised reward of the slot that was played | supervised MSE — online there is **one** label per decision, not the ~45 the offline trainer gets |
+| value head | replayed transitions | TD(0) |
+| Q-head | replayed transitions | double DQN with a Polyak-averaged target |
+| critic + policy | the on-policy rollout | clipped PPO with GAE, plus a distillation term that folds the top-K search's choices back into the policy so the cheap amortised policy catches up with the search |
+
+### Safety mechanisms
+
+An unguarded online learner on a production cluster is how a working scheduler becomes a broken
+one. Five guards, all in `nero/online/learner.py`:
+
+1. **Candidate / deployed separation.** Gradients only ever touch the candidate networks; acting
+   always uses the deployed ones.
+2. **Promotion gate.** A candidate is promoted only if it is *not worse* than what is deployed.
+   `--gate sim` replays recent job sets through the cluster simulator for both; `--gate canary`
+   needs no simulator and instead serves a random `--canary-frac` slice of live traffic with the
+   candidate, comparing the two arms over the same window — so drifting traffic moves both arms
+   alike and cannot be mistaken for a policy regression. A candidate that fails keeps learning
+   and is retested; only `--gate-patience` consecutive failures roll it back, so an improvement
+   that needs several windows to appear is not discarded every time.
+3. **Trust region.** After *every minibatch* the true `KL(deployed ‖ candidate)` is measured in
+   eval mode over the whole rollout, and the update stops as soon as it exceeds `--kl-target`.
+4. **Small steps.** Online learning rates sit below the offline ones (actor 2e-4 vs 5e-4,
+   critic 5e-4 vs 1e-3) with gradient-norm clipping — though it is the trust region above, not
+   the learning rate, that actually bounds how far one update can move the policy.
+5. **Feasibility is never learned.** Action masking is applied at every step, so no amount of
+   learning can emit an infeasible placement.
+
+### The experiment
+
+A 400-episode job stream is generated whose mix **shifts at episode 100** — the shifted mix
+over-weights ResNet-50 and Transformer jobs and the largest batch sizes. The *identical* stream is
+served by every arm, so the comparison is paired:
+
+* **frozen** — today's deployment: fixed policy, greedy, no search;
+* **frozen + search** — Solution 4 with frozen heads (`--use-topk` only), which separates what
+  the *search* buys from what *learning* buys;
+* **online** — the continual learner.
+
+Because the learner explores on ~10% of steps and only promotes through the gate, its *realised*
+return understates the policy it is building. So every other update the deployed policy is also
+measured **alone** (greedy, no search) on a fixed probe set drawn from the current mix. That probe
+is the honest read on how much the policy itself has improved.
+
+### Results — policy-only online learning
+
+`python -m scripts.online_learning`. The frozen policy is well outside its training distribution after
+the shift, and the learner recovers part of the gap:
+
+| Measurement (shifted mix) | Frozen | Online |
+|---|---|---|
+| policy-only probe, mean over the 15 post-shift probes | 6.45 | **6.71 (+4.1%)** |
+| best probe | 6.45 | 7.38 (+14.4%) |
+| realised deployment return, episodes 100–400 | **6.25** | 6.16 |
+| held-out sets (the *original* mix) | **15.15** | 14.74 |
+
+Gate activity over the 40 updates: **18 promotions, 2 rollbacks**.
+
+![Online learning](results/job_scheduling/online_learning_policy.png)
+
+Four things this says, none of them flattering by accident:
+
+* **The policy does adapt.** It climbs from −6% to **+14%** against the frozen policy on the
+  shifted probe set between episodes 160 and 320.
+* **The promotion gate is the bottleneck on adaptation speed, and it is noisy.** The last two
+  probes fall back below frozen: a regression slipped through a shadow evaluation run on only
+  8 job sets. Doubling the monitor set is a straight trade:
+
+  | `--monitor-episodes` | probe mean | best probe | promotions | held-out (old mix) |
+  |---|---|---|---|---|
+  | 8 (default) | 6.71 (+4.1%) | 7.38 | 18/40 | 14.74 |
+  | 16 | **6.92 (+7.2%)** | **7.73** | 20/40 | 13.90 |
+
+  More monitor episodes means a better-powered gate and faster adaptation — and more forgetting.
+* **Exploration is not free.** The realised return over the stream is *lower* than frozen
+  (6.16 vs 6.25) even though the underlying policy is better, because ~10% of steps sample
+  instead of exploiting. Over 300 episodes the adaptation gain has not yet repaid the
+  exploration cost. `--explore-eps 0` makes the curves match and removes the learning signal.
+* **Adapting to the new mix costs performance on the old one** (15.15 → 14.74 on the held-out
+  sets, and 13.90 with the better-powered gate). That is ordinary catastrophic forgetting and
+  the honest price of tracking a moving distribution with one set of weights. A deployment that
+  must serve both mixes wants a replay buffer that retains old traffic, or separate weights per
+  regime — neither is implemented here.
+
+### Results — search + online learning
+
+`python -m scripts.online_learning --use-topk`. Now all three arms are in play, and the picture changes:
+
+| Post-shift deployment (episodes 100–400) | Realised return |
+|---|---|
+| frozen policy | 6.25 |
+| **frozen + top-K search** (Solution 4, no learning) | **7.85 (+25.6%)** |
+| online (search + continual learning) | 7.14 (+14.3%) |
+
+**The search, not the learning, is what survives the drift.** The learned reward model
+generalises over *slot features* — job type, accelerator, co-located job — rather than over the
+job mix, so it stays accurate when the mix changes and the search keeps finding good placements
+with no retraining at all. That is the strongest argument for Solution 4: it is robust to exactly
+the distribution shift that motivates online learning in the first place.
+
+Continual learning on top is a net negative over this horizon (7.14 vs 7.85). The distilled
+policy does improve — the policy-only probe averages **+5.2%** over frozen, peaking at +12.7% —
+but the ~10% of steps spent exploring instead of searching costs more than the policy gains, and
+the 15 promotions the gate let through were validated on 8-episode shadow evaluations.
+
+Decomposing the held-out regression (old mix, 20 sets) separates the two learned pieces:
+
+| Policy | Reward model | Held-out mean |
+|---|---|---|
+| frozen | frozen | **17.48** |
+| frozen | online-updated | 17.26 |
+| online-updated | frozen | 15.82 |
+| online-updated | online-updated | 15.95 |
+
+**The reward model survives online updating; the policy is what forgets.** Even though online it
+sees a single label per decision instead of 45, the updated reward model costs only −0.22 on the
+old mix and its mean regret there is actually *lower* than the offline model's
+(2.7e-04 vs 5.0e-04). The −1.66 comes from the policy adapting to the new mix. If you deploy one
+of these, update the heads continuously and gate policy updates much more conservatively than the
+defaults here do.
+
+![Online learning with search](results/job_scheduling/online_learning_topk.png)
+
+### Where the code lives
+
+| Module | Responsibility | Self-check |
+|---|---|---|
+| `nero/search/canonicalization.py` | Reward-equivalence classes, the 18-d slot feature encoding, and fast dense reward labels | `python -m nero.search.canonicalization` |
+| `nero/search/fast_obs.py` | Applies a candidate placement to an observation as an O(A) delta | `python -m nero.search.fast_obs` |
+| `nero/search/heads.py` | `SlotRewardModel`, `SlotValueHead`, `SlotQHead`, and the `LearnedScorer` that combines them | — |
+| `nero/search/topk.py` | `LearnedTopKActor`: propose → canonicalise → score → commit | — |
+| `nero/search/two_tier.py` | `LearnedTopK_SubsetSelectorEnv`: two-tier scheduling with the search doing the placements | — |
+| `nero/online/learner.py` | `OnlineLearner`: replay, the four update rules, and the safety mechanisms | — |
+| `nero/agents/loading.py` | Shared construction/loading of the inner PPO agent | — |
+| `scripts/train_reward_model.py` | Offline fitting of the three heads | — |
+| `scripts/online_learning.py` | The drift experiment, its arms, probes, curves and plots | — |
 
 ---
 
@@ -203,14 +639,14 @@ Four families of reference policy are evaluated on the same 20 held-out job sets
 
 | Baseline | Where | What it does |
 |---|---|---|
-| Random | `eval_all_policies.py` | Uniform choice among feasible slots |
-| `gavel_max_throughput` | `eval_all_policies.py` | Greedily maximizes the current job's own throughput |
-| `gavel_max_total` (oracle) | `eval_all_policies.py` | Greedily maximizes total throughput including co-location interference. Needs exact true throughputs at decision time, so it is an **offline upper bound for single-copy scheduling**, not a deployable scheduler |
-| Sia | `sia_baseline.py` | Heterogeneity-aware, goodput-optimized ILP scheduler (SOSP '23) |
+| Random | `scripts/evaluate.py` | Uniform choice among feasible slots |
+| `gavel_max_throughput` | `scripts/evaluate.py` | Greedily maximizes the current job's own throughput |
+| `gavel_max_total` (oracle) | `scripts/evaluate.py` | Greedily maximizes total throughput including co-location interference. Needs exact true throughputs at decision time, so it is an **offline upper bound for single-copy scheduling**, not a deployable scheduler |
+| Sia | `scripts/sia_baseline.py` | Heterogeneity-aware, goodput-optimized ILP scheduler (SOSP '23) |
 
 ### Sia
 
-`sia_baseline.py` reproduces Sia's actual scheduling formulation rather than a greedy
+`scripts/sia_baseline.py` reproduces Sia's actual scheduling formulation rather than a greedy
 approximation of it. Per scheduling round it:
 
 1. enumerates the valid configuration set `C` — one or two GPUs, by accelerator type, on one
@@ -253,23 +689,29 @@ strictly more information than the policies it is compared against.
 
 Comparison of scheduling policies on 20 held-out job sets:
 
-| Policy | Mean ± Std | vs Oracle |
-|---|---|---|
-| **PPO Two-Tier (joint training)** | **17.91 ± 2.92** | **+1.80 ▲** |
-| **PPO Top-K (K=5)** | **17.21 ± 3.84** | **+1.10 ▲** |
-| **PPO Top-K (K=3)** | **16.61 ± 3.18** | **+0.51 ▲** |
-| gavel_max_total (oracle) | 16.10 ± 3.20 | baseline |
-| PPO (greedy) | 15.15 ± 3.48 | -0.95 |
-| Sia — shared GPUs + distribution | 14.85 ± 2.29 | -1.25 |
-| Sia — shared GPUs | 14.27 ± 2.11 | -1.84 |
-| Sia — exclusive GPUs + distribution | 12.99 ± 3.97 | -3.11 |
-| Sia — exclusive GPUs | 12.48 ± 3.20 | -3.62 |
-| gavel_max_throughput | 11.06 ± 1.99 | -5.04 |
-| Random | 8.03 ± 1.96 | -8.07 |
+| Policy | Mean ± Std | vs Oracle | Deployable online? |
+|---|---|---|---|
+| **PPO Two-Tier (joint training)** | **17.91 ± 2.92** | **+1.80 ▲** | ✅ |
+| **PPO Top-K learned (K=5)** | **17.48 ± 4.00** | **+1.38 ▲** | ✅ |
+| PPO Top-K oracle (K=5) | 17.21 ± 3.84 | +1.10 ▲ | ❌ needs true throughputs |
+| **PPO Top-K learned (K=3)** | **16.65 ± 3.19** | **+0.55 ▲** | ✅ |
+| PPO Top-K oracle (K=3) | 16.61 ± 3.18 | +0.51 ▲ | ❌ needs true throughputs |
+| gavel_max_total (oracle) | 16.10 ± 3.20 | baseline | ❌ needs true throughputs |
+| PPO (greedy) | 15.15 ± 3.48 | -0.95 | ✅ |
+| Sia — shared GPUs + distribution | 14.85 ± 2.29 | -1.25 | ❌ needs throughput profiles |
+| Sia — shared GPUs | 14.27 ± 2.11 | -1.84 | ❌ needs throughput profiles |
+| Sia — exclusive GPUs + distribution | 12.99 ± 3.97 | -3.11 | ❌ needs throughput profiles |
+| Sia — exclusive GPUs | 12.48 ± 3.20 | -3.62 | ❌ needs throughput profiles |
+| gavel_max_throughput | 11.06 ± 1.99 | -5.04 | ❌ needs true throughputs |
+| Random | 8.03 ± 1.96 | -8.07 | ✅ |
 
-Std is the sample standard deviation (`ddof=1`) over the 20 held-out sets.
+Std is the sample standard deviation (`ddof=1`) over the 20 held-out sets. The "deployable
+online" column is the point of the learned top-K work: the three policies marked ❌ read exact
+co-location throughputs at decision time and exist only as offline bounds, while
+`ppo_topk_learned_k5` reaches **17.48 from observable state alone**, above every oracle in
+the table, and composing it with the duplication tier gives **19.76** (see **Top-K Search**).
 
-![Policy Comparison](curves/job_scheduling/policy_comparison.png)
+![Policy Comparison](results/job_scheduling/policy_comparison.png)
 
 ---
 
@@ -282,36 +724,35 @@ later steps read artifacts produced by earlier ones.
 ### 0. Prerequisites
 
 1. `pip install -r requirements.txt`
-2. Confirm `physical_all.json` is at the repository root and `saved_job_sets/` is present
+2. Confirm `data/physical_all.json` is at the repository root and `data/saved_job_sets/` is present
    (see **Setup and Requirements**).
 3. *(Optional)* Reset committed reference artifacts before retraining. The training scripts
    **overwrite** the best checkpoints in `models/job_scheduling/ppo/` and
    `models/subset_selector/ppo/`, and the evaluation scripts **overwrite**
-   `curves/job_scheduling/evaluation_scores_*.json`. To restore the committed reference models
+   `results/job_scheduling/evaluation_scores_*.json`. To restore the committed reference models
    and curves afterwards:
 
-       git checkout -- models/ curves/
+       git checkout -- models/ results/
 
-   ⚠ Do **not** run `git clean -fdx` in this repository: the final deliverables (`__paper/`,
-   `deploy/`, the evaluation/figure scripts, `curves/figures/`) are not tracked by git yet, so
-   a clean would delete them. `models/job_scheduling/ppo/pretrained/` is never written by any
-   script and always survives a rerun as a reference snapshot.
+   ⚠ Avoid `git clean -fdx`: it deletes everything ignored, including the experiment
+   checkpoints under `models/` that `.gitignore` deliberately leaves untracked (online
+   learning, the partial-supervision ablation) and would have to be re-run.
 
 ### 1. Train the inner agent (placement policy)
 
-    python job_scheduling_ppo.py
+    python -m scripts.train_inner
 
 - Trains the primary PPO scheduler for **15,000 episodes** (~55 jobs each), one gradient update
   every 2,048 steps, held-out evaluation every 300 episodes.
 - The best checkpoint (by held-out mean reward) is written to
   `models/job_scheduling/ppo/actor.pth` and `critic.pth`; the final eval run also rewrites
-  `curves/job_scheduling/evaluation_scores_ppo.json`.
-- Training curve → `curves/job_scheduling/training_ppo.png|json`. Expect a final mean near
+  `results/job_scheduling/evaluation_scores_ppo.json`.
+- Training curve → `results/job_scheduling/training_ppo.png|json`. Expect a final mean near
   **15.15** (the paper's inner-agent result).
 
 ### 2. Train the outer agent (joint training / duplication decisions)
 
-    python subset_selector_ppo.py
+    python -m scripts.train_outer
 
 - Builds the two-tier training environment, which loads the inner weights
   (`models/job_scheduling/ppo/actor.pth`) into a **frozen *primary* agent** (initial placement)
@@ -320,49 +761,90 @@ later steps read artifacts produced by earlier ones.
 - **10,000 episodes**, held-out evaluation every 20 episodes. The best checkpoint (by eval total
   throughput) is saved to `models/subset_selector/ppo/actor.pth|critic.pth`. At every gradient
   update the fine-tuned secondary agent is saved to `models/job_scheduling/ppo/secondary/`.
-- Curves → `curves/subset_selector/training_ppo.png|json` and `total_sum.png` /
+- Curves → `results/subset_selector/training_ppo.png|json` and `total_sum.png` /
   `eval_total_sum.json`. The best evaluation reached during training is **18.14**, but that
   score belongs to the outer actor paired with the *secondary* inner agent as it stood at that
   moment; the secondary agent keeps being overwritten afterwards, so re-evaluating the committed
   checkpoint pair in step 3 gives **17.91**. The re-evaluated number is the one reported.
 
-### 3. Re-run all baseline and two-tier evaluations
+### 3. Train the oracle-free scoring heads
 
-    python eval_all_policies.py     # random, gavel_max_throughput, gavel_max_total, PPO greedy, top-K (K=3/5), two-tier
-    python sia_baseline.py          # Sia (exclusive/shared × ±distribution)
+    python -m scripts.train_reward_model
 
-Both overwrite `curves/job_scheduling/evaluation_scores_*.json` and print a per-policy
+- Rolls out **800 episodes** on the training distribution with a mixture behaviour policy
+  (40% greedy episodes, the rest ε-exploratory), logging for every visited state the true
+  reward of *every* feasible slot, Monte-Carlo returns on the greedy episodes, and the played
+  transition plus 2 counterfactual transitions built by `nero/search/fast_obs.py`.
+- Fits three heads into `models/job_scheduling/learned_topk/`: `reward_model.pth`
+  (dense regression on the canonical slot features), `value_head.pth` (Monte-Carlo `V`), and
+  `q_head.pth` (double DQN with a Polyak target).
+- Diagnostics → `results/job_scheduling/learned_topk_training.json`. Expect the reward model to
+  reach **≥ 0.97 argmax agreement** with the oracle and a validation MAE around **5e-03**, and
+  the final held-out sweep to print `mode=reward` near **17.48**.
+- Runtime ≈ 10 min on an M3 (≈ 2.5 min collection, the rest fitting).
+
+Self-checks for the two exactness claims this step relies on:
+
+    python -m nero.search.canonicalization   # reward-equivalence classes + dense labels vs the oracle
+    python -m nero.search.fast_obs           # delta-built next observation vs env.step
+
+### 4. Continual online learning (optional)
+
+    python -m scripts.online_learning                                    # policy-only
+    python -m scripts.online_learning --use-topk \
+        --out-dir models/job_scheduling/online_topk --tag topk    # search + learning
+
+Serves a 400-episode job stream whose mix **shifts at episode 100**, to every arm under test, and
+keeps updating the online arm behind a promotion gate. Writes
+`results/job_scheduling/online_learning_*.json|png`, the adapted networks to `--out-dir`, and
+`results/job_scheduling/evaluation_scores_ppo_online*.json`. Runtime ≈ 6 min policy-only,
+≈ 50 min with `--use-topk`. Useful flags: `--gate canary` (no simulator), `--shift-at -1`
+(stationary stream), `--explore-eps`, `--gate-patience`.
+
+### 5. Re-run all baseline and two-tier evaluations
+
+    python -m scripts.evaluate     # random, gavel baselines, PPO greedy, oracle + learned top-K, online, two-tier
+    python -m scripts.sia_baseline          # Sia (exclusive/shared × ±distribution)
+    python -m scripts.evaluate --validation 40   # model selection only, never reported
+
+Both overwrite `results/job_scheduling/evaluation_scores_*.json` and print a per-policy
 `vs-committed diff`, so any deviation from the reported numbers is flagged immediately.
+The learned top-K and online rows are skipped with a message if steps 3–4 have not been run.
 
-Expected means: two-tier **17.91**, top-K K=5 **17.21**, top-K K=3 **16.61**, max-total
-oracle **16.10**, PPO greedy **15.15**, Sia shared+dist **14.85**, Sia shared **14.27**,
-Sia exclusive+dist **12.99**, Sia exclusive **12.48**, max-throughput **11.06**, random **8.03**.
+Expected means: two-tier **17.91**, learned top-K K=5 **17.48**, oracle top-K K=5 **17.21**,
+learned top-K K=3 **16.65**, oracle top-K K=3 **16.61**, max-total oracle **16.10**,
+PPO greedy **15.15**, Sia shared+dist **14.85**, Sia shared **14.27**, Sia exclusive+dist
+**12.99**, Sia exclusive **12.48**, max-throughput **11.06**, random **8.03**.
 
-### 4. Regenerate all figures
+### 6. Regenerate all figures
 
-    python regen_paper_figs.py              # re-read raw eval/training JSONs → save curves/figures/figures.json → render
-    python regen_paper_figs.py --plot-only  # re-render every figure from curves/figures/figures.json alone
+    python -m scripts.figure_data    # the two measurements the figures need
+    python -m scripts.figures   # -> paper/images/report_*.pdf
 
-Writes publication-quality vector figures to `__paper/images/` (plus the README bitmap
-`curves/job_scheduling/policy_comparison.png`). The self-contained data snapshot in
-`curves/figures/figures.json` is committed, so every plot can be reproduced even without any
+Every figure in the paper is produced by `scripts/figures.py` from the JSON artifacts the
+evaluation scripts write, in one shared style (`nero/plotting.py`), so no figure can drift from
+the measurements.
+
+Writes publication-quality vector figures to `paper/images/` (plus the README bitmap
+`results/job_scheduling/policy_comparison.png`). The self-contained data snapshot in
+`results/figures/figures.json` is committed, so every plot can be reproduced even without any
 raw eval JSONs.
 
-### 5. Benchmark online inference
+### 7. Benchmark online inference
 
-    python benchmark_inference.py
+    python -m scripts.benchmark
 
-Reports median/mean latency of the inner forward pass, full placement decision, and outer
-duplication decision (MPS vs CPU eager), and verifies that the CPU deploy paths
-(`deploy/online_actor.py`) produce actions **identical** to the reference greedy policies used
-for the reported scores.
+Reports median/mean latency of the inner forward pass, full placement decision, outer
+duplication decision (MPS vs CPU eager) and the oracle-free top-K decision path, and verifies
+that the CPU deploy paths (`nero/deployment.py`) produce actions **identical** to the
+reference greedy policies used for the reported scores.
 
-### 6. Rebuild the papers
+### 8. Build the paper
 
-    cd __paper && pdflatex main.tex && pdflatex main.tex
-    cd __paper && pdflatex EWRL2026_TwoTier_RL_Formatted.tex && pdflatex EWRL2026_TwoTier_RL_Formatted.tex
+    cd paper && pdflatex nero && bibtex nero && pdflatex nero && pdflatex nero
 
-(Run twice so cross-references — `fig:policy_comparison`, `fig:two_tier_per_set`, … — resolve.)
+The last two passes resolve the bibliography and cross-references. See `paper/README.md`
+for rebuilding the figures and the architecture diagram.
 
 ### Model artifacts at a glance
 
@@ -372,17 +854,24 @@ for the reported scores.
 | `models/job_scheduling/ppo/secondary/` | Inner agent fine-tuned during joint training for duplicate placements (used by the two-tier eval) |
 | `models/job_scheduling/ppo/pretrained/` | Pre-joint-training snapshot of the inner agent (kept for comparison) |
 | `models/subset_selector/ppo/actor.pth` · `critic.pth` | Outer (duplication-decision) PPO — best by eval total throughput (two-tier mean ≈ 17.91) |
+| `models/job_scheduling/learned_topk/reward_model.pth` | Learned stand-in for the oracle reward, over the 18-d canonical slot features |
+| `models/job_scheduling/learned_topk/value_head.pth` · `q_head.pth` | Monte-Carlo `V(state)` and double-DQN `Q(state, ·)` for the long-horizon scoring modes |
+| `models/job_scheduling/online/` · `online_topk/` | Networks left behind by `scripts/online_learning.py` (plus `history.json`, the per-update gate log) |
 
 ### Reproducibility notes
 
-- A global seed (`SEED = 42`) is fixed in `environment/ppo/core.py`; evaluation always walks the
+- A global seed (`SEED = 42`) is fixed in `nero/agents/ppo.py`; evaluation always walks the
   20 held-out sets in deterministic order (`set_000` … `set_019`, no shuffling), so runs are stable.
-- `eval_all_policies.py` and `sia_baseline.py` intentionally overwrite the committed score JSONs
+- `scripts/evaluate.py` and `scripts/sia_baseline.py` intentionally overwrite the committed score JSONs
   and print diffs — run them as a *verification* that you reproduce the paper's numbers before
   changing anything.
 - Training length is the main lever on runtime: step 1 runs ~825k environment steps
   (15,000 episodes × ~55 jobs), step 2 runs 10,000 two-tier episodes with an evaluation
   (20 episodes over the held-out sets) every 20 episodes.
+- Steps 3 and 4 use their own seeds (`--seed`, default 42) and are much cheaper (~10 min and
+  ~6 min). Step 4 is stochastic by design — it explores on live traffic — so its curves move
+  between runs; the frozen arm it is compared against is deterministic, and both arms always
+  see the identical job stream.
 
 ### Verification checklist
 
@@ -390,14 +879,22 @@ After a full rerun, confirm each artifact matches the committed values:
 
 | Step | Artifact | Expected |
 |---|---|---|
-| 1 | `curves/job_scheduling/evaluation_scores_ppo.json` mean | ≈ **15.15** |
-| 2 | `curves/subset_selector/eval_total_sum.json` max (best during training) | ≈ **18.14** |
-| 3 | `curves/job_scheduling/evaluation_scores_subset_selector.json` mean | ≈ **17.91** |
-| 3 | `..._gavel_max_total.json` mean | ≈ **16.10** |
-| 3 | `..._ppo_topk_k5.json` mean | ≈ **17.21** |
-| 3 | `..._sia_colocated_dist.json` mean | ≈ **14.85** (must exceed `..._sia_colocated.json` ≈ **14.27**) |
-| 3 | `..._sia_original_dist.json` mean | ≈ **12.99** (must exceed `..._sia_original.json` ≈ **12.48**) |
-| 4 | `curves/figures/figures.json` + `__paper/images/*.pdf` | regenerated, byte-identical via `--plot-only` |
-| 5 | `benchmark_inference.py` output | inner ≈ 0.11 ms / decision ≈ 0.54 ms / outer ≈ 0.10 ms |
+| 1 | `results/job_scheduling/evaluation_scores_ppo.json` mean | ≈ **15.15** |
+| 2 | `results/subset_selector/eval_total_sum.json` max (best during training) | ≈ **18.14** |
+| 5 | `results/job_scheduling/evaluation_scores_subset_selector.json` mean | ≈ **17.91** |
+| 5 | `..._gavel_max_total.json` mean | ≈ **16.10** |
+| 5 | `..._ppo_topk_k5.json` mean | ≈ **17.21** |
+| 3 | `python -m nero.search.canonicalization` | exact: intra-class reward spread **0.0**, dense-label error < 1e-5 |
+| 3 | `python -m nero.search.fast_obs` | exact: max abs difference from `env.step` < 1e-6 |
+| 3 | `learned_topk_training.json` final `val_top1` | ≈ **0.98** (reward-model argmax agreement with the oracle) |
+| 5 | `..._ppo_topk_learned_k5.json` mean | ≈ **17.48** (must be ≥ `..._ppo_topk_k5.json`) |
+| 5 | `..._ppo_topk_learned_k3.json` mean | ≈ **16.65** |
+| 5 | `..._sia_colocated_dist.json` mean | ≈ **14.85** (must exceed `..._sia_colocated.json` ≈ **14.27**) |
+| 5 | `..._sia_original_dist.json` mean | ≈ **12.99** (must exceed `..._sia_original.json` ≈ **12.48**) |
+| 6 | `results/figures/figures.json` + `paper/images/*.pdf` | regenerated, byte-identical via `--plot-only` |
+| 7 | `scripts/benchmark.py` output | inner forward ≈ 0.11 ms / outer decision ≈ 0.11 ms; all placement paths within a factor of two of each other (absolute values are machine- and load-dependent — the reproducible invariant is that learned top-K sits within ~20% of a greedy decision using the same feasibility scan) |
+| 7 | `scripts/benchmark.py` correctness block | inner and outer actions identical to the reference policies, and canonicalised top-K identical to plain top-K |
+| 7 | `scripts/benchmark.py` no-oracle-access guard | all four learned modes complete episodes with the throughput table armed; both oracle controls trip it |
+| 5 | `python -m scripts.evaluate --validation 40` | `ppo_topk_learned_k5` is the best learned variant on validation (16.23), confirming the shipped configuration |
 
 ---

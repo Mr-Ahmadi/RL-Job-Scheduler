@@ -1,0 +1,46 @@
+{
+  "canon": {
+    "label": "canonicalisation",
+    "median": 0.04299997817724943,
+    "oracle": false
+  },
+  "nextobs": {
+    "label": "next-obs delta",
+    "median": 0.013709068298339844,
+    "oracle": false
+  },
+  "greedy": {
+    "label": "PPO greedy (deployed)",
+    "median": 0.6166459643281996,
+    "oracle": false
+  },
+  "greedy_fast": {
+    "label": "PPO greedy (same scan)",
+    "median": 0.5064164870418608,
+    "oracle": false
+  },
+  "learned": {
+    "label": "learned top-$K$",
+    "median": 0.5807704874314368,
+    "oracle": false
+  },
+  "blend": {
+    "label": "learned top-$K$ (blend)",
+    "median": 1.0210624895989895,
+    "oracle": false
+  },
+  "oracle": {
+    "label": "oracle top-$K$",
+    "median": 0.6656250334344804,
+    "oracle": true
+  },
+  "order": [
+    "canon",
+    "nextobs",
+    "greedy",
+    "greedy_fast",
+    "learned",
+    "blend",
+    "oracle"
+  ]
+}
