@@ -3,6 +3,7 @@
 
 \usepackage{graphicx}
 \usepackage{times}
+\usepackage{microtype}
 \usepackage{float}
 \usepackage{booktabs}
 \usepackage{amsmath,amssymb,amsthm}
@@ -63,7 +64,6 @@ used only to report, and configurations are selected on a separate validation
 stream.
 \end{abstract}
 
-
 \section{Introduction}
 Efficient job scheduling is an important challenge in modern computing systems. The rapid increase of machine learning workloads has created a strong need for effective use of heterogeneous hardware resources, especially GPUs. Traditional scheduling methods often rely on heuristics or fixed optimization strategies. While these methods are simple, they do not adapt well to dynamic environments where job requirements and resource availability change over time. As a result, they cannot fully take advantage of the performance potential of large computing clusters \cite{luo2025prediction}.
 
@@ -86,16 +86,11 @@ With the rapid growth of DDL workloads, understanding the behavior of such jobs 
 
 Reinforcement learning (RL) offers a promising direction for this problem. Instead of following predefined rules, RL agents can learn adaptive strategies directly from experience. By observing the system state and receiving feedback from past decisions, an RL-based scheduler can improve over time. Prior work has demonstrated that RL is a powerful framework for tackling this challenge, showing it can significantly increase hardware utilization, reduce job completion times, and improve overall throughput~\cite{luan2019sched2,mao2019learning,venkataswamy2022launchpad}.
 
-
 In this paper, we introduce a dual-agent RL method for job scheduling in heterogeneous GPU clusters. The method is built around two agents that work together. The inner agent assigns jobs to specific GPUs based on workload performance profiles. The outer agent decides whether to duplicate jobs in order to improve overall throughput. This hierarchical structure allows the system to combine local scheduling efficiency with global optimization.
 
 We evaluate our method using the \texttt{Gavel} throughput dataset, which provides performance measurements for deep learning workloads on heterogeneous GPU architectures. Both agents are trained with Proximal Policy Optimization (PPO)~\cite{schulman2017ppo}, and we compare the learned schedulers against random placement, two greedy policies derived from Gavel, and Sia~\cite{zhong2023sia}, a state-of-the-art heterogeneity-aware, goodput-optimized cluster scheduler.
 
 Finally, we design a joint training phase where both agents are trained at the same time. The inner agent begins from its best pre-trained model, and both agents then refine their policies together. This joint training speeds up convergence and leads to higher cumulative throughput. The results demonstrate that coordinated multi-agent learning is an effective strategy for job scheduling in heterogeneous computing environments.
-
-
-
-
 
 The second contribution of this paper follows from a diagnosis of the first.
 Section~\ref{sec:inner-results} shows that the inner agent's remaining gap to the
@@ -244,7 +239,6 @@ m_j(c) \, x_{a,s}^c \le 2,
 \end{subequations}
 \end{problem}
 
-
 \noindent
 The formulation can be summarized as follows:
 \begin{itemize}
@@ -254,9 +248,9 @@ The formulation can be summarized as follows:
     \item \textbf{Constraint (\ref{eq:c3}):} Decision variables are binary.
 \end{itemize}
 
-\begin{figure*}[!t]
+\begin{figure}[tb]
     \centering
-    \includegraphics[width=\textwidth]{images/workflow.pdf}
+    \includegraphics[width=0.88\textwidth]{images/workflow.pdf}
     \caption{The two-tier workflow. In phase~1 the inner agent places every queued job
 exactly once. In phase~2 the outer agent walks the resulting schedule and decides,
 per job, whether to duplicate it; each duplicate is returned to the inner tier for
@@ -264,7 +258,7 @@ placement. Both tiers choose a slot by the same rule---the greedy $\arg\max$ of
 Section~\ref{sec:method}, or the oracle-free top-$K$ search of
 Section~\ref{sec:oraclefree}, which is a drop-in replacement for it.}
     \label{fig:dig}
-\end{figure*}
+\end{figure}
 \subsection{Computational Complexity of the Assignment Problem}
 \label{subsec:complexity}
 
@@ -338,7 +332,6 @@ subject to
 This yields a mixed-integer quadratic program (MIQP) equivalent to the earlier formulation but with
 \(|\mathcal{J}|\,|\mathcal{A}|\,|\mathcal{S}|\) binary decision variables.
 
-
 Consequently, the ``best'' placement for a job cannot be pre-computed in isolation;
 it depends on its co-location partner and the specific hardware,
 making the problem inherently non-linear and non-separable.
@@ -347,7 +340,6 @@ considering hardware types---and the quadratic objective with pairwise
 interaction terms renders the problem strongly NP-hard.
 These factors motivate the use of approximate methods,
 such as reinforcement learning, to obtain near-optimal solutions efficiently.
-
 
 \subsection{Justification for Reinforcement Learning}
 \label{sec:justification}
@@ -398,19 +390,6 @@ This results in a problem strictly harder than GAP, as the profit from assigning
 \label{sec:anon}
 This section describes the proposed two-tier reinforcement learning (RL) method for GPU management in heterogeneous clusters. In Subsection~\ref{sec:over}, we present a high-level overview of the scheduler and in Subsection~\ref{sec:model} we describe components of the scheduler in detail. 
 
-% This section describes the data preprocessing pipeline, the two-tier reinforcement learning (RL) method, and the workflow used to train the job scheduling model.
-
-% \subsection{Overview}
-% Our job scheduling model is based on a dual-agent RL method. It combines two agents that operate at different levels: an \emph{inner agent} that maps jobs to hardware resources, and an \emph{outer agent} that decides whether duplicating jobs will improve cluster utilization and throughput. 
-
-% This design is motivated by the observation that job-to-resource mapping and job duplication require different decision-making horizons. The inner agent focuses on fine-grained allocation, while the outer agent makes higher-level strategic choices. Separating these roles enables the system to learn scheduling behaviors that would be difficult for a single agent to capture.
-
-% \subsection{Workflow}
-% Figure~\ref{fig:dig} illustrates the overall workflow. The process begins when a set of jobs arrives for scheduling. The inner agent assigns each job once, selecting a suitable server and accelerator. After all jobs are placed, the outer agent reviews the schedule and decides for each job whether duplication would improve throughput. 
-
-% If a job is duplicated, it is returned to the inner agent for placement. This process continues until the outer agent has checked all jobs. The final schedule, consisting of original and duplicated jobs, is then executed on the cluster.
-
-
 \subsection{Overview}
 \label{sec:over}
 The scheduler is designed to handle GPU management from two related perspectives. The first perspective is the mapping of ML jobs to GPUs, with the goal of matching each job to the GPU that best fits its requirements and capabilities. The second perspective is the scaling of ML jobs by allocating them additional GPUs. This scaling leverages both the distributable nature of ML workloads and the ability of modern GPUs to run multiple colocated jobs. Rather than optimizing these two objectives in isolation, the scheduler integrates them into a single method. It uses a dual-agent RL approach that coordinates two agents, each responsible for decisions at a different level of scheduling.
@@ -421,16 +400,9 @@ The overall workflow of the scheduler is shown in Figure~\ref{fig:dig}. When a s
 
 After both the original and replicated jobs are placed, the final schedule is executed on the cluster. The hierarchical structure of the scheduler allows the inner agent to manage fine-grained resource allocation, while the outer agent focuses on high-level optimization to improve scheduling efficiency and throughput.
  
-% The overall workflow of the scheduler is illustrated in Figure~\ref{fig:dig}. When a set of jobs arrives for scheduling, the process begins with the inner agent, which assigns each job exactly once by selecting an appropriate server and accelerator. After all initial job placements are completed, the outer agent evaluates the current schedule and decides, for each job, whether duplication would be beneficial. If the outer agent chooses to duplicate a job, that job is sent back to the inner agent for placement on an additional resource. This iterative process continues until the outer agent has examined all jobs.
-
-% Finally, after both original and duplicated jobs have been assigned, the completed schedule is executed on the cluster. This hierarchical coordination between the inner and outer agents allows the method to balance fine-grained resource allocation with high-level optimization, resulting in more efficient scheduling and improved overall throughput.
 
 \subsection{Job Scheduling Model}
 \label{sec:model}
-% QUESTION: do we need to explain mdp?!
-% We formulate the job scheduling problem as a Markov Decision Process (MDP) \cite{gilks1995introducing}, where the system evolves through interactions between an agent and the environment. At each decision step $t$, the agent observes the current state $s_t \in S$ and selects an action $a_t \in A$, which leads to a new state $s_{t+1} \in S$ according to the transition dynamics $T(s_t, a_t, s_{t+1})$. The agent then receives a reward $R(s_t, a_t, s_{t+1})$, which quantifies the quality of the chosen action in the given context. The objective is to learn a policy $\pi(a|s)$ that maximizes the expected cumulative reward over time.
-
-% In this work, the MDP formulation \cite{gilks1995introducing} is instantiated using a two-tier reinforcement learning method, with distinct responsibilities assigned to an \emph{inner agent} and an \emph{outer agent}.
 
 The job scheduling model employs a two-tier RL method with distinct responsibilities for the inner and outer agents.
 
@@ -648,7 +620,6 @@ the whole rollout after every minibatch, exceeds a target; learning rates are
 reduced and gradients clipped; and action masking is applied at every step, so no
 amount of learning can emit an infeasible placement.
 
-
 \section{Experimental Setup}
 
 We base our experiments on the \texttt{Gavel} throughput dataset~\cite{gavel}, which provides performance statistics of machine learning workloads executed on heterogeneous accelerators. The raw throughput traces were obtained from the official Gavel repository\footnote{\url{https://github.com/stanford-futuredata/gavel}} and processed into a structured format suitable for  RL experiments. To ensure data quality, we first removed malformed or incomplete entries.
@@ -657,7 +628,7 @@ Each workload was standardized into a (\texttt{model}, \texttt{batch size}) tupl
 
 From this dataset, we constructed a job table encompassing deep learning models across multiple architectures. Each job is parameterized by its model type and batch size, and its execution was profiled on three GPU types—\texttt{K80}, \texttt{P100}, and \texttt{V100}—to capture realistic heterogeneity. The resulting job table is summarized in Table~\ref{tab:jobtable}.
 
-\begin{table}[h]
+\begin{table}[tb]
   \centering
   \caption{Deep learning workloads used to construct the job table.}
   \label{tab:jobtable}
@@ -678,7 +649,7 @@ Training was performed in a simulated environment that generates random job sets
 
 All models were trained using the Adam optimizer with a batch size of 128 and a hidden layer size of 1024 across four layers. The inner agent was trained for \textbf{15{,}000 episodes} and the outer agent for \textbf{10{,}000 episodes}. The inner agent was evaluated every $300$ episodes and the outer agent every $20$ episodes on the evaluation environment to monitor convergence and performance.
 
-\begin{table}[h]
+\begin{table}[tb]
 \centering
 \caption{PPO hyperparameters. Learning rates and the clip range are annealed
 linearly in log-space over training; the outer agent reuses the inner agent's
@@ -704,7 +675,6 @@ Gradient-norm clip & 0.5 & 0.5 \\
 \end{tabular}
 \end{table}
 
-
 The entropy coefficient decays from $0.05$ to $0.005$ during training to encourage early exploration and stabilize convergence, and the clipped objective anneals its clip range from $0.2$ to $0.1$. Advantages are computed with Generalized Advantage Estimation ($\lambda = 0.95$) and normalized per update. Invalid actions are masked out of the policy distribution before sampling, so the agents never propose an assignment that violates the co-location limit.
 
 \subsubsection*{Baselines}
@@ -719,7 +689,6 @@ Our principal heuristic baseline is \emph{Sia}~\cite{zhong2023sia}.  We reproduc
 subject to $\|A_i\|_1 \le 1$ and per-accelerator-type capacity constraints, with $\lambda = 1.1$.  Every job is scheduled exactly once and never re-allocated, so the restart factor is $r_i = 1$.  A configuration requests one or two GPUs; two-GPU configurations are discounted by the very same-server and cross-server factors the environment charges for distribution, playing the role of Sia's sub-linear scaling efficiency.  Since Sia assumes exclusive GPUs, we report two variants: \emph{Sia exclusive}, in which each GPU hosts a single job, and \emph{Sia shared}, our extension in which each GPU a configuration requests carries a level---solo or shared---and a shared GPU is priced at the job's mean co-located throughput over the job types in the queue.  The shared variant adds the constraints $\text{share}_X \le 2 y_X$ and $\text{solo}_X + y_X \le |\mathcal{S}|$ per accelerator type $X$, where $y_X$ counts the GPUs of that type operated in shared mode.  Solving the ILP over the full queue gives Sia strictly more information than the online policies it is compared against.
 
 Because the ILP constrains GPU counts but not server locality, a separate placement pass maps configurations to concrete slots, most-constrained configurations first; a pair that cannot be seated on one server is split across two, which happened $19$ times in total across the $20$ held-out sets ($1{,}018$ jobs) for the strongest variant.
-
 
 \subsection{Evaluation Protocol}
 \label{sec:protocol}
@@ -764,9 +733,9 @@ what makes the negative result meaningful.
 \label{sec:inner-results}
 The inner agent, responsible for mapping machine learning jobs to heterogeneous accelerators, was first trained on its own. Figure~\ref{fig:job_scheduling_training} tracks its mean cumulative reward on the held-out sets, evaluated every $300$ episodes across $15{,}000$ training episodes. The agent improves steadily from $5.86$ at the first evaluation and converges to a best held-out mean of $15.15$, which is the checkpoint used for every result reported below.
 
-\begin{figure}[h]
+\begin{figure}[tb]
   \centering
-  \includegraphics[width=4.60in]{images/report_inner_training.pdf}
+  \includegraphics[width=0.62\textwidth]{images/report_inner_training.pdf}
   \caption{Held-out mean cumulative throughput of the inner PPO agent over
 $15{,}000$ training episodes, evaluated every $300$ episodes. The dashed line marks
 the best checkpoint, which is the one used for every result reported below.}
@@ -775,9 +744,9 @@ the best checkpoint, which is the one used for every result reported below.}
 
 Figure~\ref{fig:policy_comparison} compares the mean throughput of every policy. Sia is evaluated in four configurations, obtained by crossing exclusive against shared GPUs and single-GPU against multi-GPU allocations: exclusive ($12.48 \pm 3.20$), exclusive with distribution ($12.99 \pm 3.97$), shared ($14.27 \pm 2.11$), and shared with distribution ($14.85 \pm 2.29$). Both axes behave as the cluster model predicts. Allowing GPU sharing raises Sia by $1.79$ without distribution and $1.86$ with it, because doubling the number of schedulable slots lets it serve every queued job rather than leaving the tail unscheduled. Allowing multi-GPU configurations raises it by a further $0.51$ (exclusive) and $0.58$ (shared): once the ILP has served every job, the capacity constraint in Eq.~\eqref{eq:sia} is what decides whether spare slots are worth spending on a second copy. This is a property of the global formulation, not of distribution per se---a greedy rule that duplicates whenever the immediate gain looks positive spends slots that later jobs need and \emph{loses} throughput.
 
-\begin{figure}[H]
+\begin{figure}[tb]
   \centering
-  \includegraphics[width=4.60in]{images/report_policy_comparison.pdf}
+  \includegraphics[width=0.72\textwidth]{images/report_policy_comparison.pdf}
   \caption{Mean cumulative throughput ($\pm$ standard error) of every evaluated
 policy over the 20 held-out job sets. Hatched bars read exact throughputs at
 decision time---the two oracles and the four Sia configurations---and are not
@@ -797,9 +766,9 @@ the outer agent to place the duplicates.
 
 Figure~\ref{fig:subset_selector_training} shows both learning signals, evaluated on the held-out sets every $20$ episodes. The outer agent's own episode reward---the throughput its duplication decisions add---rises from $-2.13$ to roughly $+2.5$, crossing zero early in training: the agent starts by duplicating indiscriminately, which costs throughput, and learns to duplicate only where spare capacity makes it profitable. The total held-out throughput of the resulting two-tier schedule rises in step, from $13.02$ to $18.14$ at its best evaluation.
 
-\begin{figure}[h]
+\begin{figure}[tb]
   \centering
-  \includegraphics[width=4.60in]{images/report_outer_training.pdf}
+  \includegraphics[width=0.62\textwidth]{images/report_outer_training.pdf}
   \caption{Joint training of the outer agent and the duplicate-placement policy
 over $10{,}000$ episodes, evaluated every $20$ episodes and smoothed with a
 $15$-point moving average. Top: reward from the duplication decisions alone,
@@ -811,10 +780,9 @@ complete two-tier schedule.}
 
 Re-evaluating the saved checkpoint end to end gives a mean cumulative throughput of $17.91 \pm 2.92$ on the held-out sets---an $18\%$ improvement over the inner agent alone ($15.15$), and above both the max-total oracle ($16.10$) and the strongest heuristic baseline, Sia with shared GPUs and distribution ($14.85 \pm 2.29$). It beats the oracle on $13$ of the $20$ held-out sets (Figure~\ref{fig:two_tier_per_set}). These results show that the outer agent's duplication decisions provide substantial throughput beyond what the placement agent can reach alone, and that freezing the base placement is enough to attribute that gain to the duplication tier.
 
-
-\begin{figure}[H]
+\begin{figure}[tb]
   \centering
-  \includegraphics[width=4.60in]{images/report_two_tier_per_set.pdf}
+  \includegraphics[width=0.64\textwidth]{images/report_two_tier_per_set.pdf}
   \caption{Per-set cumulative throughput across the 20 held-out job sets; dotted
 lines mark the means. The two-tier system beats the max-total oracle on 13 of the
 20 sets, and adding the oracle-free search raises it further on most of them.}
@@ -824,9 +792,9 @@ lines mark the means. The two-tier system beats the max-total oracle on 13 of th
 \subsection{The Oracle-Free Search Matches the Oracle-Assisted One}
 \label{sec:results-oraclefree}
 
-\begin{figure}[t]
+\begin{figure}[tb]
 \centering
-\includegraphics[width=3.50in]{images/report_reward_model.pdf}
+\includegraphics[width=0.47\textwidth]{images/report_reward_model.pdf}
 \caption{The learned reward model against the oracle quantity it replaces, on
 every feasible slot of greedy rollouts over the $20$ test sets. The throughput
 tables are read here only to produce the horizontal axis; the model sees none of
@@ -934,9 +902,9 @@ table.
 \subsection{Ablations}
 \label{sec:ablation}
 
-\begin{figure}[t]
+\begin{figure}[tb]
 \centering
-\includegraphics[width=4.60in]{images/report_ablation.pdf}
+\includegraphics[width=0.62\textwidth]{images/report_ablation.pdf}
 \caption{How the candidate set is built and what scores it, on the $20$ test
 sets. Error bars are one standard error. The dashed line is the inner policy used
 without any search. The winning configuration was selected on validation, not
@@ -966,13 +934,12 @@ ${\sim}0.01$--$0.3$. The long-horizon term injects noise one to two orders of
 magnitude larger than the signal it is meant to refine. The components are
 implemented, trained and evaluated; the shipped default is myopic.
 
-
 \subsection{Learning the Reward Model Online}
 \label{sec:online-reward}
 
-\begin{figure}[t]
+\begin{figure}[tb]
 \centering
-\includegraphics[width=4.60in]{images/report_online_reward_model.pdf}
+\includegraphics[width=0.62\textwidth]{images/report_online_reward_model.pdf}
 \caption{Bootstrapping the reward model on live traffic with one label per
 decision. The policy is frozen throughout, so the curve isolates the reward model.
 The oracle top-$K$ reference ($17.21$) is omitted because it coincides with the
@@ -1012,12 +979,9 @@ A key advantage of the learned schedulers over the max-total oracle is that they
 
 In contrast, the max-total oracle is an offline upper bound rather than a deployable scheduler. Each of its decisions re-evaluates every candidate slot using the exact true throughput of each job on each accelerator type, including pair-specific co-location interference. Such perfect, real-time profiling is precisely the information that is expensive or unavailable in production clusters, which is what motivates learning a scheduling policy from observations in the first place. The inner agent alone therefore lags the oracle slightly ($15.15$ vs.\ $16.10$), but the complete two-tier system \emph{surpasses} it ($17.91$ vs.\ $16.10$; Figure~\ref{fig:two_tier_per_set}). Two effects explain this. First, the oracle is \emph{myopic}: it greedily maximizes only the immediate total throughput of the current placement and, when several slots tie at the optimum, resolves the tie by a fixed enumeration order, without considering how the choice shapes the cluster for future jobs. The learned policies are instead trained to maximize cumulative return over an entire job set, so their tie-breaking favours placements that leave resources well-positioned for the jobs yet to arrive. Second, the outer agent's duplication decisions \emph{enlarge} the action space beyond what any single-placement policy---learned or not---can reach: placing a copy of a job on an underutilized accelerator, or on an accelerator that co-locates favourably with it, converts idle capacity into additional throughput. The oracle never duplicates, so its $16.10$ is an upper bound for the \emph{single-copy} scheduling problem; the two-tier system solves a strictly larger problem and exceeds that bound using only observable state and millisecond-scale decisions.
 
-
-
-
-\begin{figure}[t]
+\begin{figure}[tb]
 \centering
-\includegraphics[width=4.60in]{images/report_latency.pdf}
+\includegraphics[width=0.75\textwidth]{images/report_latency.pdf}
 \caption{Median latency of a full placement decision, measured on the same
 half-full cluster state (eager fp32, one CPU thread, $400$ timed decisions after
 warm-up). The hatched bar reads exact throughputs.}
@@ -1049,9 +1013,9 @@ prices has not happened yet.
 \subsection{Continual Learning under Job-Mix Drift}
 \label{sec:drift}
 
-\begin{figure}[t]
+\begin{figure}[tb]
 \centering
-\includegraphics[width=4.60in]{images/report_drift.pdf}
+\includegraphics[width=0.64\textwidth]{images/report_drift.pdf}
 \caption{A $400$-episode deployment stream whose job mix shifts at episode $100$
 toward heavier models and larger batch sizes. All arms are served the identical
 stream, so the comparison is paired.}
@@ -1077,9 +1041,9 @@ Held-out sets (the \emph{old} mix) & $\mathbf{15.15}$ & --- & $14.19$ \\
 \end{tabular}
 \end{table}
 
-\begin{figure}[t]
+\begin{figure}[tb]
 \centering
-\includegraphics[width=4.60in]{images/report_probe.pdf}
+\includegraphics[width=0.62\textwidth]{images/report_probe.pdf}
 \caption{The deployed policy measured alone---greedy, without the search---on a
 fixed probe set from the drifted mix, relative to the frozen policy on the same
 sets. The oscillation is the promotion gate: shadow evaluations on eight job sets
@@ -1130,8 +1094,6 @@ on adaptation speed: doubling the monitor set from $8$ to $16$ job sets raises t
 probe gain from $+4.1\%$ to $+7.2\%$ and simultaneously deepens forgetting
 ($14.74 \rightarrow 13.90$).
 
-
-
 \section{Discussion}
 
 Two aspects of these results deserve separate treatment: what our evaluation
@@ -1157,7 +1119,6 @@ contrast, holds at $+1.04$ ($t = 5.60$). We therefore selected every configurati
 introduced in this paper on validation (Section~\ref{sec:protocol}) and report the
 two-tier numbers as they stand, noting that the comparison between the two-tier
 system and the search is the one that should not be read as settled.
-
 
 \subsection{Why Two Components Did Not Pay Off}
 
@@ -1224,8 +1185,6 @@ Everything is measured inside the Gavel-derived simulator. Latency figures come
 from real CPU timings, but the throughput model, the interference model and the
 distribution discounts are all simulator assumptions.
 
-
-
 \section{Conclusion}
 
 We presented a two-tier reinforcement learning scheduler for heterogeneous
@@ -1274,7 +1233,6 @@ Future work could extend the formulation to online scheduling with dynamic job
 arrivals, explore transfer across cluster configurations, and investigate job
 preemption and elastic scaling.
 
-
 \section*{Reproducibility}
 
 All results are produced by a single evaluation entry point that scores every
@@ -1288,7 +1246,6 @@ verification pass. Every figure is regenerated from the stored measurement data 
 one script, so no figure can diverge from the numbers it depicts.
 
 \section*{Acknowledgments}
-
 
 \bibliographystyle{unsrt}
 \bibliography{references}
