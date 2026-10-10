@@ -1,4 +1,4 @@
-"""Figures for paper/oracle_free_topk_report.tex.
+"""Figures for report/report.tex.
 
 One plot per file, vector PDF only, sized for the report's text column. Text is
 typeset by LaTeX with the same Times family as the report, so figure labels and
@@ -21,16 +21,16 @@ Usage:  python -m scripts.figures
 import json
 import os
 
-import nero.plotting
-from nero.plotting import (BLUE, GREEN, HATCH, INK, INK_SOFT, RULE, VERM, W,
+import scheduler.plotting
+from scheduler.plotting import (BLUE, GREEN, HATCH, INK, INK_SOFT, RULE, VERM, W,
                         W_SQUARE, value_axis_only)
 
-nero.plotting.apply()
+scheduler.plotting.apply()
 
 import matplotlib.pyplot as plt  # noqa: E402
 import numpy as np  # noqa: E402
 from matplotlib.ticker import MultipleLocator  # noqa: E402
-from nero.paths import ROOT as PROJECT_ROOT, FIGURES, OUTER_CURVES, SCORES
+from scheduler.paths import ROOT as PROJECT_ROOT, FIGURES, OUTER_CURVES, SCORES
 
 ROOT = str(PROJECT_ROOT)
 CURVES = str(SCORES)

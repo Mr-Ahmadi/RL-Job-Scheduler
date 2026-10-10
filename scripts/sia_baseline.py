@@ -107,8 +107,8 @@ except ImportError as exc:  # pragma: no cover - dependency guard
         "install it with `pip install -r requirements.txt`."
     ) from exc
 
-from nero.envs.job_scheduling.eval import Eval_JobSchedulingEnv
-from nero.paths import SCORES, TEST_SETS
+from scheduler.envs.job_scheduling.eval import Eval_JobSchedulingEnv
+from scheduler.paths import SCORES, TEST_SETS
 
 OUT = str(SCORES)
 EPISODES = 20

@@ -19,14 +19,14 @@ import time
 import numpy as np
 import torch
 
-from nero.agents.loading import load_inner_agent
-from nero.deployment import OnlineActor, SubsetSelector
-from nero.envs.job_scheduling.eval import Eval_JobSchedulingEnv
-from nero.agents.ppo import PPOAgent, device, flatten_obs
-from nero.envs.subset_selector.common import flatten_obs_subset
-from nero.envs.subset_selector.eval import Eval_SubsetSelectorEnv
-from nero.evaluation import greedy_max_total, make_ppo_greedy, make_topk, valid_actions
-from nero.paths import INNER, OUTER, TEST_SETS
+from scheduler.agents.loading import load_inner_agent
+from scheduler.deployment import OnlineActor, SubsetSelector
+from scheduler.envs.job_scheduling.eval import Eval_JobSchedulingEnv
+from scheduler.agents.ppo import PPOAgent, device, flatten_obs
+from scheduler.envs.subset_selector.common import flatten_obs_subset
+from scheduler.envs.subset_selector.eval import Eval_SubsetSelectorEnv
+from scheduler.evaluation import greedy_max_total, make_ppo_greedy, make_topk, valid_actions
+from scheduler.paths import INNER, OUTER, TEST_SETS
 
 torch.set_num_threads(1)
 
@@ -53,9 +53,9 @@ def bench_learned_topk(env, ref_agent, k=5):
     """Latency of the oracle-free top-K decision path (Solution 4)."""
     import os
 
-    from nero.search.canonicalization import canonical_classes, feasible_slots
-    from nero.search.heads import DEFAULT_DIR
-    from nero.search.topk import LearnedTopKActor
+    from scheduler.search.canonicalization import canonical_classes, feasible_slots
+    from scheduler.search.heads import DEFAULT_DIR
+    from scheduler.search.topk import LearnedTopKActor
 
     print("== learned top-K (oracle-free, Solution 4) ==")
     if not os.path.exists(f"{DEFAULT_DIR}/reward_model.pth"):
@@ -123,8 +123,8 @@ def check_no_oracle_access(agent, episodes=2, k=5):
     pay out the reward once the action is taken.  The oracle policies are run
     through the same guard as a control: a guard that nothing trips proves nothing.
     """
-    from nero.search.heads import SCORER_MODES
-    from nero.search.topk import LearnedTopKActor
+    from scheduler.search.heads import SCORER_MODES
+    from scheduler.search.topk import LearnedTopKActor
 
     def guarded(fn, env):
         real_tr = env.problem.Tr
@@ -169,7 +169,7 @@ def check_no_oracle_access(agent, episodes=2, k=5):
 
 def check_canonicalisation_equivalence(agent, episodes=3, k=5):
     """Deduplicating the top-K list must not change any decision."""
-    from nero.search.topk import LearnedTopKActor
+    from scheduler.search.topk import LearnedTopKActor
 
     plain = LearnedTopKActor(k=k, mode="reward", canonical="none", device="cpu",
                              threads=1, agent=agent)
@@ -302,7 +302,7 @@ def main():
 
     import os
 
-    from nero.search.heads import DEFAULT_DIR
+    from scheduler.search.heads import DEFAULT_DIR
     if os.path.exists(f"{DEFAULT_DIR}/reward_model.pth"):
         cpu_agent, _, _ = load_inner_agent(device="cpu")
         check_canonicalisation_equivalence(cpu_agent)

@@ -17,20 +17,20 @@ import time
 import numpy as np
 import torch
 
-from nero.agents.loading import load_inner_agent
-from nero.search.canonicalization import dense_rewards, feasible_slots, slot_features
-from nero.search.heads import DEFAULT_DIR, SlotRewardModel
-from nero.search.topk import LearnedTopKActor
-from nero.envs.job_scheduling.eval import Eval_JobSchedulingEnv
-from nero.evaluation import make_topk
-from nero.paths import SCORES, TEST_SETS
+from scheduler.agents.loading import load_inner_agent
+from scheduler.search.canonicalization import dense_rewards, feasible_slots, slot_features
+from scheduler.search.heads import DEFAULT_DIR, SlotRewardModel
+from scheduler.search.topk import LearnedTopKActor
+from scheduler.envs.job_scheduling.eval import Eval_JobSchedulingEnv
+from scheduler.evaluation import make_topk
+from scheduler.paths import SCORES, TEST_SETS
 
 CURVES = str(SCORES)
 WARMUP, N = 30, 400
 
 
 def reward_scatter(episodes=20):
-    from nero.search.canonicalization import feature_dim
+    from scheduler.search.canonicalization import feature_dim
 
     probe = Eval_JobSchedulingEnv(str(TEST_SETS))
     probe.reset()
@@ -81,9 +81,9 @@ def _bench(fn):
 
 
 def latency():
-    from nero.search.canonicalization import canonical_classes
-    from nero.search.fast_obs import NextObsBuilder
-    from nero.deployment import OnlineActor
+    from scheduler.search.canonicalization import canonical_classes
+    from scheduler.search.fast_obs import NextObsBuilder
+    from scheduler.deployment import OnlineActor
 
     torch.set_num_threads(1)
     cpu_agent, _, _ = load_inner_agent(device="cpu")

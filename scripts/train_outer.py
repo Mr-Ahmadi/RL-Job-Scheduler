@@ -1,11 +1,11 @@
 import json
 import numpy as np
 import torch
-from nero.agents.ppo import PPOAgent
-from nero.envs.subset_selector.common import flatten_obs_subset
-from nero.envs.subset_selector.train import Train_SubsetSelectorEnv
-from nero.envs.subset_selector.eval import Eval_SubsetSelectorEnv
-from nero.paths import OUTER, OUTER_CURVES, TEST_SETS
+from scheduler.agents.ppo import PPOAgent
+from scheduler.envs.subset_selector.common import flatten_obs_subset
+from scheduler.envs.subset_selector.train import Train_SubsetSelectorEnv
+from scheduler.envs.subset_selector.eval import Eval_SubsetSelectorEnv
+from scheduler.paths import OUTER, OUTER_CURVES, TEST_SETS
 
 
 def build_mask(state):

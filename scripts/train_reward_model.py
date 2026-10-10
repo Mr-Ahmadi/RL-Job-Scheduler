@@ -11,7 +11,7 @@ Training data is always randomly generated job sets; the 20 sets in
 score, never to fit or select anything.
 
 * **reward model** ``r_hat(features)`` -- dense regression on the canonical slot
-  features (``nero.search.canonicalization.slot_features``).  At every visited state
+  features (``scheduler.search.canonicalization.slot_features``).  At every visited state
   the true reward of *every* feasible slot is computed and regressed at once, so
   one env step supplies ~45 labels instead of 1.  Because the features are a
   sufficient statistic for the reward, this is a small, learnable function.
@@ -21,7 +21,7 @@ score, never to fit or select anything.
 * **Q-head** ``q(state, .)`` -- double DQN with a Polyak-averaged target network.
   Each env step contributes the played transition plus ``--counterfactuals``
   off-policy transitions whose next state comes from the exact delta builder in
-  ``nero/search/fast_obs.py``, which widens action coverage without extra env steps.
+  ``scheduler/search/fast_obs.py``, which widens action coverage without extra env steps.
 
 Usage:  python -m scripts.train_reward_model [--episodes 800] [--epochs 30]
 """
@@ -36,17 +36,17 @@ import numpy as np
 import torch
 import torch.nn.functional as F
 
-from nero.agents.loading import load_inner_agent
-from nero.search.canonicalization import dense_rewards, feature_dim, slot_features
-from nero.envs.job_scheduling.base import MAX_JOBS_PER_GPU
-from nero.search.fast_obs import NextObsBuilder
-from nero.search.heads import (DEFAULT_DIR, SlotQHead, SlotRewardModel,
+from scheduler.agents.loading import load_inner_agent
+from scheduler.search.canonicalization import dense_rewards, feature_dim, slot_features
+from scheduler.envs.job_scheduling.base import MAX_JOBS_PER_GPU
+from scheduler.search.fast_obs import NextObsBuilder
+from scheduler.search.heads import (DEFAULT_DIR, SlotQHead, SlotRewardModel,
                                    SlotValueHead)
-from nero.envs.job_scheduling.eval import Eval_JobSchedulingEnv
-from nero.envs.job_scheduling.train import Train_JobSchedulingEnv
-from nero.agents.ppo import device as default_device
-from nero.agents.ppo import flatten_obs
-from nero.paths import SCORES, TEST_SETS
+from scheduler.envs.job_scheduling.eval import Eval_JobSchedulingEnv
+from scheduler.envs.job_scheduling.train import Train_JobSchedulingEnv
+from scheduler.agents.ppo import device as default_device
+from scheduler.agents.ppo import flatten_obs
+from scheduler.paths import SCORES, TEST_SETS
 
 CURVE_DIR = str(SCORES)
 
@@ -61,7 +61,7 @@ def restricted_job_sampler(exclude, rng):
     Used to fit a reward model that has never seen some model families, so the
     online bootstrap in ``scripts/online_reward_model.py`` has something real to learn.
     """
-    from nero.envs.problem import JobTable
+    from scheduler.envs.problem import JobTable
 
     types = [(t.model, 1) for t in JobTable
              if not any(t.model.startswith(x) for x in exclude)]
@@ -356,8 +356,8 @@ def train_q_head(net, data, gamma, iters, batch_size, tau, device, verbose=True)
 
 def quick_eval(mode, k, beta, learned_dir, device, episodes=20, agent=None):
     """Evaluate the oracle-free top-K actor on the held-out sets."""
-    from nero.search.topk import LearnedTopKActor
-    from nero.evaluation import run_episode
+    from scheduler.search.topk import LearnedTopKActor
+    from scheduler.evaluation import run_episode
 
     actor = LearnedTopKActor(k=k, mode=mode, beta=beta, learned_dir=learned_dir,
                              device=device, threads=0, agent=agent)

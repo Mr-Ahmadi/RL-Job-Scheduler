@@ -9,7 +9,7 @@ The experiment this script runs:
    * **frozen** -- today's deployment: fixed policy, greedy, no search;
    * **frozen+search** -- Solution 4 with frozen heads (only with ``--use-topk``),
      which separates what the *search* buys from what *learning* buys;
-   * **online** -- ``nero.online.learner.OnlineLearner``, which keeps updating
+   * **online** -- ``scheduler.online.learner.OnlineLearner``, which keeps updating
      its reward model, value head, Q-head, critic and policy behind a promotion
      gate;
 3. every ``--probe-every`` updates the online learner's *policy alone* (no
@@ -32,15 +32,15 @@ import random
 import numpy as np
 import torch
 
-from nero.agents.loading import load_inner_agent
-from nero.search.canonicalization import feature_dim
-from nero.search.heads import (DEFAULT_DIR, SlotQHead, SlotRewardModel,
+from scheduler.agents.loading import load_inner_agent
+from scheduler.search.canonicalization import feature_dim
+from scheduler.search.heads import (DEFAULT_DIR, SlotQHead, SlotRewardModel,
                                    SlotValueHead)
-from nero.online.learner import OnlineLearner
-from nero.envs.problem import JobTable, model_names
-from nero.envs.job_scheduling.eval import Eval_JobSchedulingEnv
-from nero.envs.job_scheduling.train import Train_JobSchedulingEnv
-from nero.paths import ONLINE, SCORES, TEST_SETS
+from scheduler.online.learner import OnlineLearner
+from scheduler.envs.problem import JobTable, model_names
+from scheduler.envs.job_scheduling.eval import Eval_JobSchedulingEnv
+from scheduler.envs.job_scheduling.train import Train_JobSchedulingEnv
+from scheduler.paths import ONLINE, SCORES, TEST_SETS
 
 CURVE_DIR = str(SCORES)
 ONLINE_DIR = str(ONLINE)
@@ -275,12 +275,12 @@ def main():
 def plot(summary, path, shift_at, window=10):
     """Two panels: what the cluster actually got, and what the policy learned.
 
-    Styled by ``nero.plotting``, the same module the report figures use.
+    Styled by ``scheduler.plotting``, the same module the report figures use.
     """
-    import nero.plotting
-    from nero.plotting import BLUE, GREEN, INK_SOFT, RULE, VERM, value_axis_only
+    import scheduler.plotting
+    from scheduler.plotting import BLUE, GREEN, INK_SOFT, RULE, VERM, value_axis_only
 
-    nero.plotting.apply()
+    scheduler.plotting.apply()
     import matplotlib.pyplot as plt
 
     def smooth(x):

@@ -39,13 +39,13 @@ import numpy as np
 import torch
 import torch.nn.functional as F
 
-from nero.agents.loading import load_inner_agent
-from nero.search.canonicalization import feature_dim, slot_features
-from nero.search.heads import DEFAULT_DIR, SlotRewardModel
-from nero.search.topk import LearnedTopKActor
-from nero.envs.job_scheduling.eval import Eval_JobSchedulingEnv
-from nero.envs.job_scheduling.train import Train_JobSchedulingEnv
-from nero.paths import MODELS, SCORES, TEST_SETS
+from scheduler.agents.loading import load_inner_agent
+from scheduler.search.canonicalization import feature_dim, slot_features
+from scheduler.search.heads import DEFAULT_DIR, SlotRewardModel
+from scheduler.search.topk import LearnedTopKActor
+from scheduler.envs.job_scheduling.eval import Eval_JobSchedulingEnv
+from scheduler.envs.job_scheduling.train import Train_JobSchedulingEnv
+from scheduler.paths import MODELS, SCORES, TEST_SETS
 
 CURVE_DIR = str(SCORES)
 
@@ -76,7 +76,7 @@ class LabelBuffer:
 
 def evaluate(actor, episodes=20):
     """Project-standard test: the 20 held-out sets, greedy, no learning."""
-    from nero.evaluation import run_episode
+    from scheduler.evaluation import run_episode
 
     env = Eval_JobSchedulingEnv(str(TEST_SETS))
     return [run_episode(env, actor.decide) for _ in range(episodes)]
@@ -88,7 +88,7 @@ def model_fidelity(model, env_sets=3):
     Uses the tables to produce ground truth, so it is never part of the loop --
     it just lets the curve be read in terms of model quality as well as reward.
     """
-    from nero.search.canonicalization import dense_rewards
+    from scheduler.search.canonicalization import dense_rewards
 
     env = Eval_JobSchedulingEnv(str(TEST_SETS))
     agree, n, errs = 0, 0, []

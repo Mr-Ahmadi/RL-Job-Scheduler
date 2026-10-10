@@ -35,12 +35,11 @@ Thumbs.db
 models/
 
 # ---------------------------------------------------------------------------
-# Paper
+# Report
 #
-# Sources, figures and the built PDF are tracked; LaTeX's scratch files and the
-# superseded drafts in archive/ are not.
+# Sources, figures and the built PDF under report/ are tracked; LaTeX scratch
+# files are not.
 # ---------------------------------------------------------------------------
-paper/
 *.aux
 *.bbl
 *.blg
@@ -61,7 +60,7 @@ paper/
 *.xdv
 
 # Reference PDFs dropped at the repository root (e.g. papers being read) are
-# not part of this project; the paper's own PDFs live under paper/.
+# not part of this project; the report PDF lives under report/.
 /*.pdf
 
 # ---------------------------------------------------------------------------

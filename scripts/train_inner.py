@@ -1,10 +1,10 @@
 import json
 import numpy as np
 import torch
-from nero.agents.ppo import device, PPOAgent, flatten_obs
-from nero.envs.job_scheduling.eval import Eval_JobSchedulingEnv
-from nero.envs.job_scheduling.train import Train_JobSchedulingEnv
-from nero.paths import INNER, SCORES, TEST_SETS
+from scheduler.agents.ppo import device, PPOAgent, flatten_obs
+from scheduler.envs.job_scheduling.eval import Eval_JobSchedulingEnv
+from scheduler.envs.job_scheduling.train import Train_JobSchedulingEnv
+from scheduler.paths import INNER, SCORES, TEST_SETS
 
 
 def get_valid_action_indices(env):

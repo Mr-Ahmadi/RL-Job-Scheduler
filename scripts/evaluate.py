@@ -2,7 +2,7 @@
 
 Covers the random and greedy (max-throughput / max-total oracle) baselines, the
 trained inner PPO agent on its own (greedy and top-K), the oracle-free learned
-top-K search (``nero/search/topk.py``), the continually-updated online policy
+top-K search (``scheduler/search/topk.py``), the continually-updated online policy
 (``scripts/online_learning.py``), and the full two-tier system.  The Sia baselines live
 in ``scripts/sia_baseline.py``.
 
@@ -26,12 +26,12 @@ import os
 import numpy as np
 import torch
 
-from nero.agents.loading import load_inner_agent
-from nero.evaluation import (EPISODES, evaluate, greedy_max_throughput, greedy_max_total,
+from scheduler.agents.loading import load_inner_agent
+from scheduler.evaluation import (EPISODES, evaluate, greedy_max_throughput, greedy_max_total,
                              make_learned_topk, make_ppo_greedy, make_random, make_topk)
-from nero.agents.ppo import PPOAgent, flatten_obs, device
-from nero.envs.job_scheduling.eval import Eval_JobSchedulingEnv
-from nero.paths import HEADS, INNER, ONLINE, OUTER, SCORES, TEST_SETS
+from scheduler.agents.ppo import PPOAgent, flatten_obs, device
+from scheduler.envs.job_scheduling.eval import Eval_JobSchedulingEnv
+from scheduler.paths import HEADS, INNER, ONLINE, OUTER, SCORES, TEST_SETS
 
 OUT = str(SCORES)
 LEARNED_DIR = str(HEADS)
@@ -50,8 +50,8 @@ def evaluate_online_policy(directory=str(ONLINE)):
 
 def evaluate_two_tier_topk(secondary=False, set_dir=str(TEST_SETS), episodes=None):
     """Two-tier system with the oracle-free search doing the placements."""
-    from nero.search.two_tier import LearnedTopK_SubsetSelectorEnv
-    from nero.envs.subset_selector.common import flatten_obs_subset
+    from scheduler.search.two_tier import LearnedTopK_SubsetSelectorEnv
+    from scheduler.envs.subset_selector.common import flatten_obs_subset
 
     episodes = EPISODES if episodes is None else episodes
     cpu_agent, _, _ = load_inner_agent(device="cpu")
@@ -93,8 +93,8 @@ def evaluate_two_tier():
     The outer agent decides *whether* to duplicate each job; the fine-tuned
     secondary inner agent decides *where* the duplicate goes.
     """
-    from nero.envs.subset_selector.eval import Eval_SubsetSelectorEnv
-    from nero.envs.subset_selector.common import flatten_obs_subset
+    from scheduler.envs.subset_selector.eval import Eval_SubsetSelectorEnv
+    from scheduler.envs.subset_selector.common import flatten_obs_subset
 
     env = Eval_SubsetSelectorEnv(str(TEST_SETS))
     obs, _ = env.reset()
@@ -149,7 +149,7 @@ def report(name, rewards):
 
 def _two_tier_scores(env_factory, sets, key, n):
     """Run a two-tier env over ``sets``, pairing each episode back by job list."""
-    from nero.envs.subset_selector.common import flatten_obs_subset
+    from scheduler.envs.subset_selector.common import flatten_obs_subset
 
     env = env_factory()
     obs, _ = env.reset()
@@ -198,7 +198,7 @@ def evaluate_two_tier_fresh(sets):
     """
     import tempfile
 
-    from nero.envs.subset_selector.eval import Eval_SubsetSelectorEnv
+    from scheduler.envs.subset_selector.eval import Eval_SubsetSelectorEnv
 
     with tempfile.TemporaryDirectory() as tmp:
         key = {}
@@ -212,7 +212,7 @@ def evaluate_two_tier_fresh(sets):
             lambda: Eval_SubsetSelectorEnv(tmp), sets, key, len(sets))
 
         if os.path.exists(f"{LEARNED_DIR}/reward_model.pth"):
-            from nero.search.two_tier import LearnedTopK_SubsetSelectorEnv
+            from scheduler.search.two_tier import LearnedTopK_SubsetSelectorEnv
             cpu_agent, _, _ = load_inner_agent(device="cpu")
             out["subset_selector_topk"] = _two_tier_scores(
                 lambda: LearnedTopK_SubsetSelectorEnv(tmp, agent=cpu_agent),
@@ -238,8 +238,8 @@ def evaluate_validation(n_sets=40, seed=20260920):
     """
     import random as _random
 
-    from nero.envs.problem import JobTable
-    from nero.envs.job_scheduling.train import Train_JobSchedulingEnv
+    from scheduler.envs.problem import JobTable
+    from scheduler.envs.job_scheduling.train import Train_JobSchedulingEnv
 
     rng = _random.Random(seed)
     types = [(t.model, 1) for t in JobTable]
